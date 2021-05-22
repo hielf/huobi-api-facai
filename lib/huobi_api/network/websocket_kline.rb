@@ -1,7 +1,7 @@
 require 'zlib'
 require_relative './websocket_base'
 
-module HuobiAPI
+module HuobiApi
   module Network
     module WebSocket
       class KLine
@@ -33,7 +33,7 @@ module HuobiAPI
 
         # @param type: 'sub' or 'req'
         def new_ws(url, type)
-          return nil unless type in 'sub' | 'req'
+          return nil unless ['sub', 'req'].include? type
 
           ws = WebSocket::new_ws(url)
           ws.on(:open) { |event| self.on_open(event, type) }
@@ -94,7 +94,9 @@ module HuobiAPI
         # 请求一次性请求K线数据
         # ws要求已经处于Open状态
         def req_kline(ws, symbol, **options)
-          unless options in { type: '1min' | '5min' | '15min' | '30min' | '60min' | '1day' | '1week' }
+          case options
+          in { type: '1min' | '5min' | '15min' | '30min' | '60min' | '1day' | '1week' }
+          else
             raise "#{self.class}#req_kline: argument wrong"
           end
 
@@ -202,10 +204,10 @@ module HuobiAPI
 
         def handle_message(data, ws)
           case data
-          in { ch:, tick: } # 有tick字段，说明是订阅后推送的实时K线数据
+          in { ch: _, tick: _} # 有tick字段，说明是订阅后推送的实时K线数据
             # handle_realtime_data(data)
             @klines.push(data)
-          in { id:, rep:, status: 'ok', data: Array } # 有rep字段，说明是一次性请求的K线数据
+          in { id: _, rep: _, status: 'ok', data: Array } # 有rep字段，说明是一次性请求的K线数据
             # handle_oneshot_req_data(data)
             @klines.push(data)
             ws.req = nil # 收到数据后，移除ws上的req
@@ -250,8 +252,8 @@ end
 
 if __FILE__ == $PROGRAM_NAME
   require_relative './../coins'
-  all_coins = HuobiAPI::Coins.new.all_symbols
-  kline = HuobiAPI::Network::WebSocket::KLine.new
+  all_coins = HuobiApi::Coins.new.all_symbols
+  kline = HuobiApi::Network::WebSocket::KLine.new
   EM.run do
     kline.init_ws_pool
     # kline.sub_some_coins_kline(%w[gtusdt dogeusdt btcusdt dkausdt])

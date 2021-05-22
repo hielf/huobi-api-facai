@@ -1,6 +1,6 @@
 require_relative './network'
 
-module HuobiAPI
+module HuobiApi
   class Coins
     @all_coins_info = nil
 
@@ -30,7 +30,7 @@ module HuobiAPI
     def self.all_coins_info_v1
       return @all_coins_info if @all_coins_info
 
-      res = HuobiAPI::Network::Rest.send_req('get', '/v1/common/symbols')
+      res = HuobiApi::Network::Rest.send_req('get', '/v1/common/symbols')
       stable_coins = %w[usdc pax dai]
       all_coins_info = res['data'].each_with_object({}) do |info, hash|
         if info['quote-currency'] == 'usdt' && info['state'] != 'offline' &&
@@ -87,7 +87,7 @@ module HuobiAPI
     def self.all_coins_info_v2  # 通过API方式，还无法获取potential区的币的信息(缺失)
       return @all_coins_info if @all_coins_info
 
-      res = HuobiAPI::Network::Rest.send_req('get', '/v2/beta/common/symbols')
+      res = HuobiApi::Network::Rest.send_req('get', '/v2/beta/common/symbols')
       stable_coins = %w[usdc pax dai]
       all_coins_info = res['data'].each_with_object({}) do |info, hash|
         if /^[^*]+USDT$/.match?(info['display_name']) && info['state'] != 'offline' && ! stable_coins.include?(info['base-currency'])
@@ -128,9 +128,9 @@ end
 if __FILE__ == $PROGRAM_NAME
   require 'json'
 
-  coins = HuobiAPI::Coins.new
+  coins = HuobiApi::Coins.new
 
-  # res = HuobiAPI::Coins.all_coins_info
+  # res = HuobiApi::Coins.all_coins_info
   # File.open('all_symbols_info_v1.json', 'w') do |f|
   #   JSON.dump res, f
   # end

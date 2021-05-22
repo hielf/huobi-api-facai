@@ -6,7 +6,7 @@ require 'logger'
 require_relative './utils'
 require_relative './../base'
 
-module HuobiAPI
+module HuobiApi
   module Network
     module Rest
       @base_url = 'https://api.huobi.pro'
@@ -39,9 +39,9 @@ module HuobiAPI
       #   req_data = {symbol: 'btcusdt', 'account-id': 123}
       #   req_data = {'symbol' => 'btcusdt', 'account-id' => 123}
       def self.send_req(method, path, req_data = nil)
-        http = self.http
+        http = self.http  # 取得http连接
 
-        method.upcase!
+        method = method.upcase
         headers = {
           'Content-Type' => 'application/json',
           'Accept' => 'application/json',

@@ -5,7 +5,7 @@ require 'securerandom'
 require_relative './../base'
 require_relative './utils'
 
-module HuobiAPI
+module HuobiApi
   module Network
     module WebSocket
       WS_URLS = [

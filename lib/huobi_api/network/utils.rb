@@ -5,7 +5,7 @@ require 'json'
 
 require_relative './../base'
 
-module HuobiAPI
+module HuobiApi
   module Network
     module Utils
       def self.build_query(data)
@@ -60,6 +60,6 @@ module HuobiAPI
 end
 
 if __FILE__ == $PROGRAM_NAME
-  puts HuobiAPI::Network::Utils.rest_auth_token('get', 'api.huobi.pro', '/order', 'wd=hello')
-  puts HuobiAPI::Network::Utils.ws_auth_token('hello world')
+  puts HuobiApi::Network::Utils.rest_auth_token('get', 'api.huobi.pro', '/order', 'wd=hello')
+  puts HuobiApi::Network::Utils.ws_auth_token('hello world')
 end

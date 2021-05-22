@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/huobi_api.iml" filepath="$PROJECT_DIR$/.idea/huobi_api.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../huobi_monitor/.idea/huobi_monitor.iml" filepath="$PROJECT_DIR$/../huobi_monitor/.idea/huobi_monitor.iml" />
     </modules>
   </component>
 </project>

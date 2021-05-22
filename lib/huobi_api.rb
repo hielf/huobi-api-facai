@@ -12,22 +12,18 @@ module HuobiApi
   # Your code goes here...
 end
 
-
 if __FILE__ == $PROGRAM_NAME
-  require 'pry'
-  p HuobiAPI::Account.account_id
-  p HuobiAPI::Account.coin_balance('usdt')
+  p HuobiApi::Account.account_id
+  p HuobiApi::Account.coin_balance('usdt')
 
-  coins = HuobiAPI::Coins.new
+  coins = HuobiApi::Coins.new
   p coins.coin_amount_precision('dkausdt')
   p coins.coin_price_precision('dkausdt')
 
-  order = HuobiAPI::Order.new('dkausdt')
+  order = HuobiApi::Order.new('dkausdt')
   p order.order_history
   # p order.submit_cancel(280980534854879)
   # p order.submit_cancel_all
   # p order.open_orders
   # p order.order_details(280980534854879)
-
-  binding.pry
 end

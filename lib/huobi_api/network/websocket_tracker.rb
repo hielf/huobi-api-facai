@@ -1,6 +1,6 @@
 require_relative './websocket_base'
 
-module HuobiAPI
+module HuobiApi
   module Network
     module WebSocket
       # Order Tracker or Account Tracker
@@ -83,11 +83,11 @@ end
 if __FILE__ == $PROGRAM_NAME
   require_relative './../coins'
 
-  t = Thread.new do
-    coins = HuobiAPI::Coins.new
+  _ = Thread.new do
+    coins = HuobiApi::Coins.new
 
     EM.run do
-      order_tracker = HuobiAPI::Network::WebSocket::Trackers.new
+      order_tracker = HuobiApi::Network::WebSocket::Trackers.new
       tick_loop = EM.tick_loop { :stop if order_tracker.ws.authed? }
       tick_loop.on_stop do
         coins.all_symbols.each_slice(40).each_with_index do |some_coins, idx|

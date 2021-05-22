@@ -3,11 +3,17 @@
 require "test_helper"
 
 class HuobiApiTest < Minitest::Test
-  def test_that_it_has_a_version_number
-    refute_nil ::HuobiApi::VERSION
+  def test_account_id
+    assert Integer === HuobiApi::Account::account_id
   end
 
-  def test_it_does_something_useful
-    assert false
+  def test_coin_balance
+    coin_balance = HuobiApi::Account::coin_balance('usdt')
+    assert coin_balance.empty? || coin_balance.except(:trade, :fronzen).any?
+  end
+
+  def test_coin_precision
+    coins = HuobiApi::Coins.new
+    assert_equal 2, coins.coin_amount_precision('dkausdt')
   end
 end

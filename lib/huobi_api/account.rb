@@ -1,6 +1,6 @@
 require_relative './network'
 
-module HuobiAPI
+module HuobiApi
   module Account
     @account_id = nil
 
@@ -8,23 +8,22 @@ module HuobiAPI
     def self.account_id
       return @account_id if @account_id
 
-      res = HuobiAPI::Network::Rest.send_req('get', '/v1/account/accounts')
-      account_id = res['data'][0]['id']
-      @account_id = account_id
-      account_id
+      res = HuobiApi::Network::Rest.send_req('get', '/v1/account/accounts')
+      @account_id = res['data']&.each { |info| break info['id'] if info['type'] == 'spot' }
+      @account_id
     end
 
     # @return [Hash{String->String}]
     def self.balance
-      res = HuobiAPI::Network::Rest.send_req('get', "/v1/account/accounts/#{account_id}/balance")
+      res = HuobiApi::Network::Rest.send_req('get', "/v1/account/accounts/#{account_id}/balance")
       res
     end
 
     # @param [String] coin
-    # @return [Hash{String->Float}]
+    # @return [Hash{String->Float}] or {}
     def self.coin_balance(coin)
       balance_list = balance['data']['list']
-      coin.downcase!
+      coin = coin.downcase
       balances = balance_list.filter { |info| info['currency'] == coin }
 
       balances.each_with_object({}) do |info, h|
@@ -35,8 +34,9 @@ module HuobiAPI
 end
 
 if __FILE__ == $PROGRAM_NAME
-  puts HuobiAPI::Account.account_id
-  puts HuobiAPI::Account.coin_balance('usdt')
+  puts HuobiApi::Account.account_id
+  puts HuobiApi::Account.coin_balance('usdt')
+  puts HuobiApi::Account.coin_balance('dkausdt')
 end
 
 

@@ -2,12 +2,12 @@ require_relative './network'
 require_relative './coins'
 require_relative './account'
 
-module HuobiAPI
+module HuobiApi
   class Order
     attr_reader :symbol, :price_precision, :amount_precision
 
     def initialize(symbol)
-      coins = HuobiAPI::Coins.new
+      coins = HuobiApi::Coins.new
 
       symbol = symbol.end_with?('usdt') ? symbol : "#{symbol}usdt"
       unless coins.valid_symbol?(symbol)
@@ -53,11 +53,11 @@ module HuobiAPI
         amount: amount,
         symbol: @symbol,
         type: order_type,
-        'account-id': HuobiAPI::Account.account_id,
+        'account-id': HuobiApi::Account.account_id,
         source: 'api',
       }.merge(options)
 
-      res = HuobiAPI::Network::Rest.send_req('post', path, req_data)
+      res = HuobiApi::Network::Rest.send_req('post', path, req_data)
       res
     end
     private :order_place
@@ -160,8 +160,8 @@ module HuobiAPI
     # openOrder: 查询已提交但是仍未完全成交或未被撤销的订单
     def open_orders
       path = '/v1/order/openOrders'
-      req_data = { symbol: @symbol, 'account-id': HuobiAPI::Account.account_id }
-      res = HuobiAPI::Network::Rest.send_req('get', path, req_data)
+      req_data = { symbol: @symbol, 'account-id': HuobiApi::Account.account_id }
+      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
       res['status'] == 'ok' ? res['data'] : nil
     end
 
@@ -172,16 +172,16 @@ module HuobiAPI
       req_data = {
         states: states,
         symbol: @symbol,
-        'account-id': HuobiAPI::Account.account_id
+        'account-id': HuobiApi::Account.account_id
       }
-      res = HuobiAPI::Network::Rest.send_req('get', path, req_data)
+      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
       res['status'] == 'ok' ? res['data'] : nil
     end
 
     # 获取订单详情
     def order_details(order_id)
       path = "/v1/order/orders/#{order_id}"
-      res = HuobiAPI::Network::Rest.send_req('get', path)
+      res = HuobiApi::Network::Rest.send_req('get', path)
       res['status'] == 'ok' ? res['data'] : nil
     end
 
@@ -189,7 +189,7 @@ module HuobiAPI
     # 撤单成功：{"status"=>"ok", "data"=>"<order_id>"}
     def submit_cancel(order_id)
       path = "/v1/order/orders/#{order_id}/submitcancel"
-      res = HuobiAPI::Network::Rest.send_req('post', path)
+      res = HuobiApi::Network::Rest.send_req('post', path)
       res
     end
 
@@ -197,10 +197,10 @@ module HuobiAPI
     def submit_cancel_all
       path = '/v1/order/orders/batchCancelOpenOrders'
       req_data = {
-        'account-id': HuobiAPI::Account.account_id,
+        'account-id': HuobiApi::Account.account_id,
         symbol: self.symbol, # 如果symbol字段为'all'，将撤销所有币的挂单
       }
-      res = HuobiAPI::Network::Rest.send_req('post', path, req_data)
+      res = HuobiApi::Network::Rest.send_req('post', path, req_data)
       res
     end
 
@@ -210,7 +210,7 @@ end
 if __FILE__ == $PROGRAM_NAME
   require 'pry'
   binding.pry
-  order = HuobiAPI::Order.new('dkausdt')
+  _order = HuobiApi::Order.new('dkausdt')
   # p order.submit_cancel(280980534854879)
   # p order.submit_cancel_all
   # p order.open_orders
