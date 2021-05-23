@@ -203,7 +203,6 @@ module HuobiApi
       res = HuobiApi::Network::Rest.send_req('post', path, req_data)
       res
     end
-
   end
 end
 

@@ -43,7 +43,7 @@ module HuobiApi
       # 或
       # ws = new_ws; ws.on(:open) {}
       def self.new_ws(url, **cbs)
-        proxy = "http://#{PROXY_ADDR}:#{PROXY_PORT}"
+        proxy = HuobiApi.proxy.to_s
         ws = Faye::WebSocket::Client.new(url, [], { proxy: { origin: proxy } })
         ws.extend WS_Extend
 

@@ -22,7 +22,16 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+```ruby
+HuobiApi.configure do |config|
+  config.proxy = 'http://proxy_address:proxy_port'
+  config.access_key = 'xxx'
+  config.secret_key = 'yyy'
+
+  config.log_file = STDOUT  # filename or ios, when missing, default STDOUT
+  config.log_level = 'debug'  # debug, info(default), warn, error, fatal
+end
+```
 
 ## License
 

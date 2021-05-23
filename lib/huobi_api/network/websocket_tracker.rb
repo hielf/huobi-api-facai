@@ -177,21 +177,3 @@ module HuobiApi
     end
   end
 end
-
-if __FILE__ == $PROGRAM_NAME
-  require_relative './../coins'
-
-  _ = Thread.new do
-    coins = HuobiApi::Coins.new.all_symbols
-
-    EM.run do
-      order_tracker = HuobiApi::Network::WebSocket::Trackers.new
-      order_tracker.sub_coins_channel(coins)
-
-      EM.tick_loop do
-        p order_tracker.orders.pop if order_tracker.orders.any?
-      end
-    end
-  end
-  sleep
-end

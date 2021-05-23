@@ -6,3 +6,4 @@
 /pkg/
 /spec/reports/
 /tmp/
+lib/only_test.rb

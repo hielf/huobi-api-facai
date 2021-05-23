@@ -20,12 +20,12 @@ module HuobiApi
 
       # 签名：HmacSHA256算法计算后，再base64编码
       def self.sign(sign_data)
-        Base64.encode64(OpenSSL::HMAC.digest('sha256', SECRET_KEY, sign_data)).gsub("\n", '')
+        Base64.encode64(OpenSSL::HMAC.digest('sha256', HuobiApi.secret_key, sign_data)).gsub("\n", '')
       end
 
       def self.rest_auth_token(method, host, path, req_data = nil)
         params = {
-          'AccessKeyId' => ACCESS_KEY,
+          'AccessKeyId' => HuobiApi.access_key,
           'SignatureMethod' => 'HmacSHA256',
           'SignatureVersion' => 2,
           'Timestamp' => Time.now.getutc.strftime('%Y-%m-%dT%H:%M:%S')
@@ -41,7 +41,7 @@ module HuobiApi
       # websocket鉴权
       def self.ws_auth_token(host)
         params = {
-          'accessKey' => ACCESS_KEY,
+          'accessKey' => HuobiApi.access_key,
           'signatureMethod' => 'HmacSHA256',
           'signatureVersion' => 2.1,
           'timestamp' => Time.now.getutc.strftime('%Y-%m-%dT%H:%M:%S')

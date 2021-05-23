@@ -247,19 +247,3 @@ module HuobiApi
   end
 end
 
-if __FILE__ == $PROGRAM_NAME
-  require_relative './../coins'
-  all_coins = HuobiApi::Coins.new.all_symbols
-  kline = HuobiApi::Network::WebSocket::KLine.new
-  EM.run do
-    kline.init_ws_pool
-    # kline.sub_some_coins_kline(%w[gtusdt dogeusdt btcusdt dkausdt])
-
-    kline.sub_some_coins_kline(all_coins)
-    # kline.req_some_coins_kline(all_coins, type: '1min')
-
-    # EM.tick_loop do
-    #   p kline.klines.pop if kline.klines.any?
-    # end
-  end
-end

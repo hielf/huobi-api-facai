@@ -1,21 +1,43 @@
-require 'logger'
+require 'uri'
+require_relative './log'
 
 module HuobiApi
-  PROXY_ADDR = 'malongshuai.cn'.freeze
-  PROXY_PORT = 8118
-  ACCESS_KEY = 'ff974e67-ez2xc4vb6n-b6d764e6-b589d'.freeze
-  SECRET_KEY = 'a62b57ce-180b0090-90f1d29a-9a664'.freeze
-end
-
-
-module HuobiApi
-  # Log = Logger.new(STDOUT)
-  Log = Logger.new('test_log.log')
-  Log.formatter = proc do |severity, datetime, progname, msg|
-    "[#{datetime.strftime('%Y-%m-%d %H:%H:%S.%3N')} #{severity}] #{progname}: #{msg}\n"
+  class << self
+    attr_accessor :proxy, :access_key, :secret_key, :log_file, :log_level
+    attr_reader :proxy_addr, :proxy_port
   end
-  Log.level = Logger::INFO
+
+  def self.proxy=(url)
+    url = 'http://' + url unless url.start_with?('http://', 'https://')
+
+    @proxy = URI(url)
+    @proxy_addr = @proxy.host
+    @proxy_port = @proxy.port
+  end
+
+  def self.log_level=(level)
+    @log_level = case level.downcase
+                 when 'debug'
+                   Logger::DEBUG
+                 when 'info'
+                   Logger::INFO
+                 when 'warn'
+                   Logger::WARN
+                 when 'error'
+                   Logger::ERROR
+                 when 'fatal'
+                   Logger::FATAL
+                 else
+                   Logger::UNKNOWN
+                 end
+  end
+
+  # HuobiApi.configure do |config|
+  #   config.proxy = 'https://www.xxx.cn'
+  #   config.log_file = 'a.log'
+  # end
+  def self.configure
+    yield self
+  end
 end
-
-
 
