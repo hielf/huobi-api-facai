@@ -25,37 +25,27 @@ module HuobiApi
           @ws = WebSocket::new_ws(@url, **cbs)
         end
 
-        # @param symbol_code_or_req: 可以是单个symbol名称，也可以是该币的请求{action: 'sub', ch: "orders#btcusdt"}
-        def sub_channel(ws, symbol_code_or_req)
-          case symbol_code_or_req
-          in { action: 'sub', ch: /^orders#.*usdt$/ }
-            sub_req = symbol_code_or_req
-            symbol = symbol_code_or_req[:ch].split('#')[-1]
-          else
-            sub_req = { action: 'sub', ch: "orders##{symbol_code_or_req}" }
-            symbol = symbol_code_or_req
-          end
-
+        def sub_channel(ws, symbol)
+          sub_req = { action: 'sub', ch: "orders##{symbol}" }
           ws.send(JSON.dump(sub_req))
           ws.tracker_reqs[symbol.to_sym] = sub_req
           ws
         end
 
-        # @param symbol_code_or_req: 可以是单个symbol名称，也可以是该币的请求{action: 'sub', ch: "orders#btcusdt"}
-        def sub_coin_channel(symbol_code_or_req)
+        def sub_coin_channel(symbol)
           EM.run do
             tick_loop = EM.tick_loop do
               if self.ws.authed?
-                sub_channel(self.ws, symbol_code_or_req)
+                sub_channel(self.ws, symbol)
                 tick_loop.stop
               end
             end
           end
         end
 
-        # @param symbols_or_reqs: 可以是symbol数组，也可以是请求数组[{action: 'sub', ch: "orders#btcusdt"},...]或他们的混合
-        def sub_coins_channel(symbols_or_reqs)
-          unless Array === symbols_or_reqs
+        # @param symbols: symbol数组
+        def sub_coins_channel(symbols)
+          unless Array === symbols
             raise "#{self.class}##{__method__.to_s}: argument wrong"
           end
 
@@ -111,7 +101,7 @@ module HuobiApi
           EM.run do
             tick_loop = EM.tick_loop do
               if self.ws.authed?
-                symbols_or_reqs.each_slice(40) { |some_coins| sub_reqs.call(some_coins) }
+                symbols.each_slice(40) { |some_coins| sub_reqs.call(some_coins) }
                 tick_loop.stop
               end
             end
@@ -130,7 +120,7 @@ module HuobiApi
           Log.info(self.class) { "Tracker connection closed: #{event.reason}" }
           # 重建连接，并重新订阅已订阅过的请求
           ws = event.current_target
-          reqs = ws.reqs
+          reqs = ws.reqs.map { |msg| msg[:ch].split("#")[-1] }
           ws.reqs = []
           sub_coins_channel(reqs)
         end
