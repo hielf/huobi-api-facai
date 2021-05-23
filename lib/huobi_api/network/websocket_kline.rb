@@ -48,8 +48,9 @@ module HuobiApi
             ws = new_ws(WS_URLS[1] + '/ws', 'req')
             EM.run {
               timer = EM::PeriodicTimer.new(0.1) do
-                if Utils.ws_opened?(ws);
-                  @req_ws_pool.push(ws); timer.cancel;
+                if Utils.ws_opened?(ws)
+                  @req_ws_pool.push(ws)
+                  timer.cancel
                 end
               end
             }
@@ -59,8 +60,9 @@ module HuobiApi
             ws = new_ws(WS_URLS[3] + '/ws', 'sub')
             EM.run {
               timer = EM::PeriodicTimer.new(0.1) do
-                if Utils.ws_opened?(ws);
-                  @sub_ws_pool.push(ws); timer.cancel;
+                if Utils.ws_opened?(ws)
+                  @sub_ws_pool.push(ws)
+                  timer.cancel
                 end
               end
             }
@@ -143,7 +145,7 @@ module HuobiApi
 
         def on_open(event, type)
           ws = event.current_target
-          Log.info(self.class) { "ws #{type} connected(#{ws.url})" }
+          Log.debug(self.class) { "ws #{type} connected(#{ws.url})" }
         end
 
         def on_close(event, type)
@@ -178,7 +180,7 @@ module HuobiApi
                   pool.push(ws)
                 elsif type == 'req'
                   ws.req = old_ws.req
-                  if ws.req # 如果ws上有请求，说明是正在请求中断开，因重发请求，接收数据后将自动放入连接池
+                  if ws.req # 如果ws上有请求，说明是正在请求中断开，应重发请求，接收数据后将自动放入连接池
                     ws.send(ws.req)
                   else
                     # 如果ws上没有请求，说明该ws处于空闲时断开，直接放进连接池
@@ -213,19 +215,14 @@ module HuobiApi
             ws.req = nil # 收到数据后，移除ws上的req
             @req_ws_pool.push(ws) # 将ws重新放回ws连接池
           in { status: 'ok' } # 可能是订阅成功、取消订阅成功的响应信息
-            Log.info(self.class) { "#{data}" }
+            Log.debug(self.class) { "#{data.slice(:id, :status, :subbed)}" }
             # {:id=>"gtusdt", :status=>"ok", :subbed=>"market.gtusdt.kline.1min", :ts=>1621512734085}
-          in { status: 'error' } # 请求发生错误，需1s后重发请求
+          in { status: 'error' }
             # {
             #   :status=>"error", :ts=>1621517393030, :id=>"nftusdt", :"err-code"=>"bad-request",
             #   :"err-msg"=>"symbol:nftusdt trade not open now "
             # }
             Log.error(self.class) { "error msgs: #{data}" }
-            # EM.run do
-            #   EM.add_timer(1) do
-            #     Utils.ws_opened?(ws) && ws.send(ws.req)
-            #   end
-            # end
           else
             Log.info(self.class) { "other msgs: #{data}" }
           end
@@ -259,7 +256,7 @@ if __FILE__ == $PROGRAM_NAME
     # kline.sub_some_coins_kline(%w[gtusdt dogeusdt btcusdt dkausdt])
 
     kline.sub_some_coins_kline(all_coins)
-    kline.req_some_coins_kline(all_coins, type: '1min')
+    # kline.req_some_coins_kline(all_coins, type: '1min')
 
     # EM.tick_loop do
     #   p kline.klines.pop if kline.klines.any?

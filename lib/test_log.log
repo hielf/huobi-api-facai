@@ -1,0 +1,2 @@
+# Logfile created on 2021-05-23 19:31:43 +0800 by logger.rb/v1.4.3
+[2021-05-23 19:19:59.426 INFO] HuobiApi::Network::WebSocket::Trackers: Tracker connection closed: 

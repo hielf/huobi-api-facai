@@ -163,7 +163,7 @@ module HuobiApi
             # 这是订阅订单更新的响应信息
             ws.reqs << msg.slice(:action, :ch)
             ws.tracker_reqs.delete(ch.split("#")[-1].to_sym)
-            Log.info(self.class) { "<#{ch}> #{action}scribed Trackers" }
+            Log.debug(self.class) { "<#{ch}> #{action}scribed Trackers" }
           in { action: "unsub" => action, ch: /orders#.*usdt/ => ch, code: 200 }
             # 这是退订的响应消息
           in { code: 4000, message: 'too.many.request' }
