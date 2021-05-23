@@ -10,5 +10,4 @@ lib/only_test.rb
 lib/*.log
 .idea
 .gitignore
-Gemfile
 Gemfile.lock
