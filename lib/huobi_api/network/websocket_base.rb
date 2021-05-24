@@ -9,13 +9,6 @@ require_relative './network_url'
 module HuobiApi
   module Network
     module WebSocket
-      # WS_URLS = [
-      #   'wss://api.huobipro.com', # 适合一次性请求和订阅
-      #   'wss://api.hadax.com', # 速度较慢
-      #   'wss://api.huobi.pro',
-      #   'wss://api-aws.huobi.pro'
-      # ].freeze
-
       # 为ws对象提供一些额外的属性
       module WS_Extend
         # authed：记录ws是否已完成认证(订阅账户余额更新和订单更新时，需认证，行情数据无需认证)
@@ -45,8 +38,7 @@ module HuobiApi
       # ws = new_ws; ws.on(:open) {}
       def self.new_ws(url, **cbs)
         if HuobiApi.proxy
-          proxy = HuobiApi.proxy.to_s
-          ws = Faye::WebSocket::Client.new(url, [], { proxy: { origin: proxy } })
+          ws = Faye::WebSocket::Client.new(url, [], { proxy: { origin: HuobiApi.proxy } })
         else
           ws = Faye::WebSocket::Client.new(url)
         end

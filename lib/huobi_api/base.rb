@@ -8,11 +8,12 @@ module HuobiApi
   end
 
   def self.proxy=(url)
-    url = 'http://' + url unless url.start_with?('http://', 'https://')
+    url = 'http://' + url unless url.start_with?('http://', 'https://', 'socks5://')
+    @proxy = url
 
-    @proxy = URI(url)
-    @proxy_addr = @proxy.host
-    @proxy_port = @proxy.port
+    uri = URI(url)
+    @proxy_addr = uri.host
+    @proxy_port = uri.port
   end
 
   def self.log_level=(level)
