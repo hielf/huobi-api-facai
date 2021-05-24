@@ -108,6 +108,11 @@ module HuobiApi
           end
         end
 
+        # 检查是否订阅了某币的订单更新通道
+        def subbed?(symbol)
+          self.ws.reqs.any? {|req| req[:ch].split("#")[-1] == symbol }
+        end
+
         private
 
         def on_open(event)

@@ -88,9 +88,15 @@ module HuobiApi
         # 订阅实时K线数据
         # ws要求已经处于Open状态
         def sub_kline(ws, symbol)
+          # req = { sub: "market.#{symbol}.kline.1min", id: symbol })
           req = gen_req(symbol, type: 'realtime')
           ws.send(req)
           ws.reqs.push(req)
+        end
+
+        # 检查某币是否订阅了实时K线数据
+        def subbed?(symbol)
+          @sub_ws_pool.any? {|ws| ws.reqs.any? {|req| req[:id] == symbol } }
         end
 
         # 请求一次性请求K线数据

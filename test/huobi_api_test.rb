@@ -2,6 +2,14 @@
 
 require "test_helper"
 
+HuobiApi.configure do |config|
+  config.proxy = 'www.xxx.com'
+  config.access_key = 'xxx'
+  config.secret_key = 'xxx'
+
+  config.log_level = 'debug'
+end
+
 class HuobiApiTest < Minitest::Test
   def test_account_id
     assert Integer === HuobiApi::Account::account_id
