@@ -10,7 +10,6 @@ require_relative './network_url'
 module HuobiApi
   module Network
     module Rest
-      @base_url = REST_URLS[0]
       @http = nil
 
       def self.http
@@ -20,7 +19,7 @@ module HuobiApi
       def self.init_rest_http_connection
         return @http if @http&.started?
 
-        uri = URI(@base_url)
+        uri = URI(REST_URLS[0])
         http = Net::HTTP.new(uri.host, uri.port, HuobiApi.proxy_addr, HuobiApi.proxy_port)
         http.use_ssl = true
 
