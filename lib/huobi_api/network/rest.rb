@@ -3,16 +3,14 @@ require 'uri'
 require 'net/http'
 require 'logger'
 
-require_relative './utils'
 require_relative './../base'
+require_relative './utils'
+require_relative './network_url'
 
 module HuobiApi
   module Network
     module Rest
-      @base_url = 'https://api.huobi.pro'
-      # @base_url1 = 'https://api.hadax.com'
-      # @base_url2 = 'https://api.huobipro.com'
-      # @base_url3 = 'https://api-aws.huobi.pro'   # 似乎不可用？
+      @base_url = REST_URLS[0]
       @http = nil
 
       def self.http

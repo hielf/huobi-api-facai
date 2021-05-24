@@ -106,7 +106,10 @@ module HuobiApi
     end
 
     def coin_info(symbol)
-      @all_coins_info&.dig(symbol)
+      info = @all_coins_info&.dig(symbol)
+
+      return info unless block_given?
+      yield info
     end
 
     def coin_price_precision(symbol)

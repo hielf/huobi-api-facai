@@ -11,7 +11,7 @@ module HuobiApi
 
       log = Logger.new(HuobiApi.log_file || STDOUT)
       log.formatter = proc do |severity, datetime, progname, msg|
-        "[#{datetime.strftime('%Y-%m-%d %H:%H:%S.%3N')} #{severity}] #{progname}: #{msg}\n"
+        "[#{datetime.strftime('%Y-%m-%d %H:%M:%S.%3N')} #{severity}] #{progname}: #{msg}\n"
       end
       log.level = HuobiApi.log_level || Logger::INFO
       @log = log
