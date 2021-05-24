@@ -55,7 +55,7 @@ module HuobiApi
           res = JSON.parse http.send_request(method, url, JSON.dump(req_data), headers).body
           res
         rescue StandardError => e
-          { 'message' => 'error', 'request_error' => e.message }
+          { 'message' => 'rest http request error', 'request_error' => e.message }
         end
       end
     end
