@@ -44,8 +44,13 @@ module HuobiApi
       # 或
       # ws = new_ws; ws.on(:open) {}
       def self.new_ws(url, **cbs)
-        proxy = HuobiApi.proxy.to_s
-        ws = Faye::WebSocket::Client.new(url, [], { proxy: { origin: proxy } })
+        if HuobiApi.proxy
+          proxy = HuobiApi.proxy.to_s
+          ws = Faye::WebSocket::Client.new(url, [], { proxy: { origin: proxy } })
+        else
+          ws = Faye::WebSocket::Client.new(url)
+        end
+
         ws.extend WS_Extend
 
         cbs[:on_open] && ws.on(:open) { |event| cbs[:on_open].call(event) }

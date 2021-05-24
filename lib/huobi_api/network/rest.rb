@@ -20,7 +20,11 @@ module HuobiApi
         return @http if @http&.started?
 
         uri = URI(REST_URLS[0])
-        http = Net::HTTP.new(uri.host, uri.port, HuobiApi.proxy_addr, HuobiApi.proxy_port)
+        if HuobiApi.proxy
+          http = Net::HTTP.new(uri.host, uri.port, HuobiApi.proxy_addr, HuobiApi.proxy_port)
+        else
+          http = Net::HTTP.new(uri.host, uri.port)
+        end
         http.use_ssl = true
 
         def http.base_url
