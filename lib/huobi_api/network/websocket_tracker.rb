@@ -5,12 +5,12 @@ module HuobiApi
     module WebSocket
       # Order Tracker or Account Tracker
       class Trackers
-        attr_accessor :ws, :orders
+        attr_accessor :ws
+        attr_reader :orders
 
         def initialize
           @url = WS_URLS[0] + '/ws/v2'
-          # @orders = Hash.new {|hash, key| hash[key] = []}
-          @orders = []
+          @orders = Hash.new {|orders, order_id| orders[order_id] = []}
 
           on_open = self.method(:on_open)
           on_close = self.method(:on_close)
@@ -33,7 +33,7 @@ module HuobiApi
         end
 
         def sub_coin_channel(symbol)
-          EM.run do
+          EM.schedule do
             tick_loop = EM.tick_loop do
               if self.ws.authed?
                 sub_channel(self.ws, symbol)
@@ -58,7 +58,7 @@ module HuobiApi
           # 为避免一次性订阅大量币时的大量失败，该lambda每轮只订阅少量(如一次性只订阅30个币)
           # 如果有大量币要订阅，应symbols.each_slice(30) {|coins| sub_reqs.call(coins)}
           sub_reqs = lambda do |some_coins|
-            EM.run do
+            EM.schedule do
               # 间隔检查订阅屏障，存在屏障时，等待屏障被移除
               t = EM::PeriodicTimer.new(0.1) do
                 unless barrier
@@ -79,7 +79,7 @@ module HuobiApi
           # 如果本轮所有订阅都成功，则移除订阅屏障
           # 如果有失败的订阅，则重发这些失败的订阅请求
           wait_sub = lambda do
-            EM.run do
+            EM.schedule do
               timer = EM::PeriodicTimer.new(0.1) do
                 # 已经成功订阅本阶段的所有请求
                 if self.ws.tracker_reqs.empty?
@@ -98,7 +98,7 @@ module HuobiApi
             end
           end
 
-          EM.run do
+          EM.schedule do
             tick_loop = EM.tick_loop do
               if self.ws.authed?
                 symbols.each_slice(40) { |some_coins| sub_reqs.call(some_coins) }
@@ -111,6 +111,11 @@ module HuobiApi
         # 检查是否订阅了某币的订单更新通道
         def subbed?(symbol)
           self.ws.reqs.any? {|req| req[:ch].split("#")[-1] == symbol }
+        end
+
+        # 检查订阅成功的数量
+        def subbed_count
+          self.ws.reqs.size
         end
 
         private
@@ -139,9 +144,10 @@ module HuobiApi
           msg = JSON.parse(event.data, symbolize_names: true)
 
           case msg
-          in { action: "push", ch: /orders#.*usdt/, data: }
+          in { action: "push", ch: /orders#.*usdt/, data: {orderId: order_id} => data}
             # 订单变动后推送的信息
-            @orders.push(data)
+            @orders[order_id].push(data)
+            # @orders.push(data)
             # puts "#{order_id}: #{data}"
           in { action: "ping", data: { ts: } }
             pong_msg = JSON.dump({ action: 'pong', data: { ts: ts } })

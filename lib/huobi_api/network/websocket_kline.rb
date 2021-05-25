@@ -46,7 +46,7 @@ module HuobiApi
         def init_ws_pool
           @req_ws_pool_size.times do
             ws = new_ws(WS_URLS[1] + '/ws', 'req')
-            EM.run {
+            EM.schedule {
               timer = EM::PeriodicTimer.new(0.1) do
                 if Utils.ws_opened?(ws)
                   @req_ws_pool.push(ws)
@@ -58,7 +58,7 @@ module HuobiApi
 
           @sub_ws_pool_size.times do
             ws = new_ws(WS_URLS[3] + '/ws', 'sub')
-            EM.run {
+            EM.schedule {
               timer = EM::PeriodicTimer.new(0.1) do
                 if Utils.ws_opened?(ws)
                   @sub_ws_pool.push(ws)
@@ -117,7 +117,7 @@ module HuobiApi
         def sub_some_coins_kline(coins)
           coins = Array[*coins]
 
-          EM.run do
+          EM.schedule do
             coins.each_slice(coins.size / @sub_ws_pool_size + 1).each_with_index do |some_coins, idx|
               timer = EM::PeriodicTimer.new(0.1) do
                 if (ws = @sub_ws_pool[idx])
@@ -135,7 +135,7 @@ module HuobiApi
         def req_some_coins_kline(coins, **options)
           coins = Array[*coins]
 
-          EM.run do
+          EM.schedule do
             coins.each do |symbol|
               tick_loop = EM.tick_loop do
                 if (ws = @req_ws_pool.pop)
@@ -177,7 +177,7 @@ module HuobiApi
 
           # 创建新的ws，并等待其open之后加入到ws池中
           ws = new_ws(old_ws.url, type)
-          EM.run do
+          EM.schedule do
             timer = EM::PeriodicTimer.new(0.1) do
               if Utils.ws_opened?(ws)
                 if type == 'sub'
