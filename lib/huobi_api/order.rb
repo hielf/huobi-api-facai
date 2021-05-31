@@ -8,16 +8,14 @@ module HuobiApi
     attr_reader :symbol, :price_precision, :amount_precision
 
     def initialize(symbol)
-      coins = HuobiApi::Coins.new
-
       symbol = symbol.end_with?('usdt') ? symbol : "#{symbol}usdt"
-      unless coins.valid_symbol?(symbol)
+      unless HuobiApi::Coins.valid_symbol?(symbol)
         raise "invalid symbol: <#{symbol}>"
       end
 
       @symbol = symbol
-      @price_precision = coins.coin_price_precision(symbol)
-      @amount_precision = coins.coin_amount_precision(symbol)
+      @price_precision = HuobiApi::Coins.coin_price_precision(symbol)
+      @amount_precision = HuobiApi::Coins.coin_amount_precision(symbol)
     end
 
     # 下单(此方法不提供策略下单功能(algo-order))

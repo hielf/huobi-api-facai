@@ -1,8 +1,13 @@
 require_relative './network'
 
 module HuobiApi
-  class Coins
+  module Coins
     @all_coins_info = nil
+    @all_symbols = nil
+
+    class << self
+      attr_reader :all_coins_info, :all_symbols
+    end
 
     # get all coin info
     # {
@@ -28,8 +33,6 @@ module HuobiApi
     #   "api-trading": "enabled"
     #  }
     def self.all_coins_info_v1
-      return @all_coins_info if @all_coins_info
-
       res = HuobiApi::Network::Rest.send_req('get', '/v1/common/symbols')
       stable_coins = %w[usdc pax dai]
       all_coins_info = res['data'].each_with_object({}) do |info, hash|
@@ -40,7 +43,6 @@ module HuobiApi
         end
       end
 
-      @all_coins_info = all_coins_info
       all_coins_info
     end
 
@@ -85,45 +87,45 @@ module HuobiApi
     #  ]
     #  }
     def self.all_coins_info_v2  # 通过API方式，还无法获取potential区的币的信息(缺失)
-      return @all_coins_info if @all_coins_info
-
       res = HuobiApi::Network::Rest.send_req('get', '/v2/beta/common/symbols')
       stable_coins = %w[usdc pax dai]
       all_coins_info = res['data'].each_with_object({}) do |info, hash|
-        if /^[^*]+USDT$/.match?(info['display_name']) && info['state'] != 'offline' && ! stable_coins.include?(info['base-currency'])
+        if /^[^*]+USDT$/.match?(info['display_name']) && info['state'] != 'offline' && ! stable_coins.include?(info['base_currency'])
           hash[info['symbol_code']] = info
         end
       end
 
-      @all_coins_info = all_coins_info
       all_coins_info
     end
 
-    attr_reader :all_coins_info, :all_symbols
-    def initialize
-      @all_coins_info = self.class.all_coins_info_v1
-      @all_symbols = @all_coins_info.keys
+    def self.all_coins_info
+      return @all_coins_info if @all_coins_info
+
+      all_coins_info = all_coins_info_v1
+      @all_coins_info = all_coins_info
+      @all_symbols = all_coins_info.keys
+      all_coins_info
     end
 
-    def coin_info(symbol)
-      info = @all_coins_info&.dig(symbol)
+    def self.coin_info(symbol)
+      info = all_coins_info[symbol]
 
       return info unless block_given?
       yield info
     end
 
-    def coin_price_precision(symbol)
-      @all_coins_info&.dig(symbol, 'price-precision') ||
-      @all_coins_info&.dig(symbol, 'trade_price_precision')
+    def self.coin_price_precision(symbol)
+      all_coins_info.dig(symbol, 'price-precision') ||
+      all_coins_info.dig(symbol, 'trade_price_precision')
     end
 
-    def coin_amount_precision(symbol)
-      @all_coins_info&.dig(symbol, 'amount-precision') ||
-      @all_coins_info&.dig(symbol, 'trade_amount_precision')
+    def self.coin_amount_precision(symbol)
+      all_coins_info.dig(symbol, 'amount-precision') ||
+      all_coins_info.dig(symbol, 'trade_amount_precision')
     end
 
-    def valid_symbol?(symbol)
-      !!@all_coins_info&.dig(symbol)
+    def self.valid_symbol?(symbol)
+      !!all_coins_info[symbol]
     end
   end
 end
@@ -131,15 +133,13 @@ end
 if __FILE__ == $PROGRAM_NAME
   require 'json'
 
-  coins = HuobiApi::Coins.new
-
   # res = HuobiApi::Coins.all_coins_info
   # File.open('all_symbols_info_v1.json', 'w') do |f|
   #   JSON.dump res, f
   # end
 
-  # p coins.all_symbols
-  # puts coins.coin_info('nftusdt')
-  puts coins.coin_amount_precision('dkausdt')
-  puts coins.coin_price_precision('dkausdt')
+  p HuobiApi::Coins.all_symbols
+  # puts HuobiApi::Coins.coin_info('nftusdt')
+  puts HuobiApi::Coins.coin_amount_precision('dkausdt')
+  puts HuobiApi::Coins.coin_price_precision('dkausdt')
 end

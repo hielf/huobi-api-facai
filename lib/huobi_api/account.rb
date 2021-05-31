@@ -22,7 +22,7 @@ module HuobiApi
     # @param [String] coin
     # @return [Hash{String->Float}] or {}
     def self.coin_balance(coin)
-      balance_list = balance['data']['list']
+      balance_list = balance.dig('data','list')
       coin = coin.downcase
       balances = balance_list.filter { |info| info['currency'] == coin }
 

@@ -6,11 +6,17 @@ module HuobiApi
       # Order Tracker or Account Tracker
       class Trackers
         attr_accessor :ws
+        # 保存交易订单的信息，包括：挂单、部分交易、交易完成、撤单
         attr_reader :orders
+        # 订单监控队列，交易订单以及策略委托的信息都推送到该队列
+        # 但注意，策略委托的请求应手动查询后推送到该队列，
+        # 订单更新的websocket并不会推送策略委托的委托请求
+        attr_reader :monitor_orders
 
         def initialize
           @url = WS_URLS[0] + '/ws/v2'
           @orders = Hash.new {|orders, order_id| orders[order_id] = []}
+          @monitor_orders = []
 
           on_open = self.method(:on_open)
           on_close = self.method(:on_close)
@@ -144,10 +150,16 @@ module HuobiApi
           msg = JSON.parse(event.data, symbolize_names: true)
 
           case msg
-          in { action: "push", ch: /orders#.*usdt/, data: {orderId: order_id} => data}
-            # 订单变动后推送的信息
-            @orders[order_id].push(data)
-            # @orders.push(data)
+          in { action: "push", ch: /orders#.*usdt/, data:}
+            # 普通订单的数据写入orders
+            # 普通订单的数据写入监控队列monitor_orders
+            # 策略委托撤单(trigger)和委托失败(deletion)的数据相关写入监控队列monitor_orders
+            # 策略委托的委托请求数据(需手动查询得到)写入监控队列monitor_orders
+
+            # 交易订单更新信息，不保存策略委托的委托请求
+            @orders[data[:orderId]].push(data) unless /^(?:trigger|deletion)$/.match?(data[:eventType])
+            @monitor_orders.push(data)
+
             # puts "#{order_id}: #{data}"
           in { action: "ping", data: { ts: } }
             pong_msg = JSON.dump({ action: 'pong', data: { ts: ts } })

@@ -2,10 +2,15 @@ require 'json'
 require 'uri'
 require 'net/http'
 require 'logger'
+require 'httplog'
 
 require_relative './../base'
 require_relative './utils'
 require_relative './network_url'
+
+HttpLog.configure do |config|
+  config.url_blacklist_pattern = '/v1/common/symbols'
+end
 
 module HuobiApi
   module Network
@@ -59,7 +64,7 @@ module HuobiApi
           res = JSON.parse http.send_request(method, url, JSON.dump(req_data), headers).body
           res
         rescue StandardError => e
-          { 'message' => 'rest http request error', 'request_error' => e.message }
+          { 'message' => 'rest http request error', 'request_error' => e.message, 'url' => url }
         end
       end
     end

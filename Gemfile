@@ -11,3 +11,5 @@ gem "minitest", "~> 5.0"
 gem 'eventmachine'
 gem 'faye-websocket'
 
+gem 'async'
+gem 'httplog'
