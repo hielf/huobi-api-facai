@@ -5,20 +5,20 @@ module HuobiApi
   module Network
     module WebSocket
       class KLine
-        attr_accessor :sub_ws_pool, :req_ws_pool, :klines
+        attr_accessor :sub_ws_pool, :req_ws_pool, :rt_kline_queue, :req_kline_queue
 
         def initialize
-          @coin_prices = Hash.new do |hash, symbol|
-            hash[symbol] = {
-              rt_price: [], half_sec: [], sec: [], "5sec": [],
-              "1min": [], "5min": [], "15min": [], "30min": [],
-              "60min": [], "1day": [], "1week": []
-            }
-          end
+          # @coin_prices = Hash.new do |hash, symbol|
+          #   hash[symbol] = {
+          #     rt_price: [], half_sec: [], sec: [], "5sec": [],
+          #     "1min": [], "5min": [], "15min": [], "30min": [],
+          #     "60min": [], "1day": [], "1week": []
+          #   }
+          # end
 
           # 保存接收到的K线数据(实时的或一次性请求的)
-          # 其内容将被<Ractor>.send到特定的Ractor中
-          @klines = []
+          @rt_klines = []
+          @req_klines = []
 
           # ws连接池，池中的ws连接均已经处于open状态
           # sub_ws_pool连接池：
@@ -33,7 +33,7 @@ module HuobiApi
 
         # @param type: 'sub' or 'req'
         def new_ws(url, type)
-          return nil unless ['sub', 'req'].include? type
+          return nil unless %w[sub req].include? type
 
           ws = WebSocket::new_ws(url)
           ws.on(:open) { |event| self.on_open(event, type) }
@@ -114,7 +114,7 @@ module HuobiApi
         end
 
         # 订阅某些指定币的实时K线数据
-        def sub_some_coins_kline(coins)
+        def sub_coins_kline(coins)
           coins = Array[*coins]
 
           EM.schedule do
@@ -129,16 +129,16 @@ module HuobiApi
           end
         end
 
-        # req_some_coins_kline(coins, type: '1min')
-        # req_some_coins_kline(coins, type: '5min')
-        # req_some_coins_kline(coins, type: '1min', from: xxx, to: xxx)
-        def req_some_coins_kline(coins, **options)
+        # req_coins_kline(coins, type: '1min')
+        # req_coins_kline(coins, type: '5min')
+        # req_coins_kline(coins, type: '1min', from: xxx, to: xxx)
+        def req_coins_kline(coins, **options)
           coins = Array[*coins]
 
           EM.schedule do
             coins.each do |symbol|
               tick_loop = EM.tick_loop do
-                if (ws = @req_ws_pool.pop)
+                if (ws = @req_ws_pool.shift)
                   req_kline(ws, symbol, **options)
                   tick_loop.stop
                 end
@@ -214,10 +214,10 @@ module HuobiApi
           case data
           in { ch: _, tick: _} # 有tick字段，说明是订阅后推送的实时K线数据
             # handle_realtime_data(data)
-            @klines.push(data)
+            @rt_kline_queue.push(data)
           in { id: _, rep: _, status: 'ok', data: Array } # 有rep字段，说明是一次性请求的K线数据
             # handle_oneshot_req_data(data)
-            @klines.push(data)
+            @req_kline_queue.push(data)
             ws.req = nil # 收到数据后，移除ws上的req
             @req_ws_pool.push(ws) # 将ws重新放回ws连接池
           in { status: 'ok' } # 可能是订阅成功、取消订阅成功的响应信息
