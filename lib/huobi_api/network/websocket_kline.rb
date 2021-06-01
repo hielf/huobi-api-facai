@@ -17,8 +17,8 @@ module HuobiApi
           # end
 
           # 保存接收到的K线数据(实时的或一次性请求的)
-          @rt_klines = []
-          @req_klines = []
+          @rt_kline_queue = []
+          @req_kline_queue = []
 
           # ws连接池，池中的ws连接均已经处于open状态
           # sub_ws_pool连接池：

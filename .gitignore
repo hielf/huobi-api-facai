@@ -11,3 +11,4 @@ lib/*.log
 .idea
 .gitignore
 Gemfile.lock
+bin/console_test.rb
