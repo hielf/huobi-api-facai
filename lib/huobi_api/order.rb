@@ -175,7 +175,7 @@ module HuobiApi
         symbol: @symbol,
         orderSide: side,
         orderType: type,
-        clientOrderId: HuobiApi::Account.account_id.to_s + '-' + SecureRandom.uuid,
+        clientOrderId: 'algo_api_' + SecureRandom.uuid,
         stopPrice: stop_price.to_f.truncate(@price_precision),
       }
 

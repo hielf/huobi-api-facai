@@ -7,7 +7,7 @@
 /spec/reports/
 /tmp/
 lib/only_test.rb
-lib/*.log
+.log
 .idea
 .gitignore
 Gemfile.lock
