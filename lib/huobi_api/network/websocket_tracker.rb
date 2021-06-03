@@ -15,7 +15,8 @@ module HuobiApi
 
         def initialize
           @url = WS_URLS[0] + '/ws/v2'
-          @orders = Hash.new {|orders, order_id| orders[order_id] = []}
+          # id: order_id 或 client_order_id
+          @orders = Hash.new {|orders, id| orders[id] = []}
           @monitor_orders = []
 
           on_open = self.method(:on_open)
@@ -133,7 +134,7 @@ module HuobiApi
         end
 
         def on_close(event)
-          Log.info(self.class) { "Tracker connection closed: #{event.reason}" }
+          Log.debug(self.class) { "Tracker connection closed: #{event.reason}" }
           # 重建连接，并重新订阅已订阅过的请求
           ws = event.current_target
           reqs = ws.reqs.map { |msg| msg[:ch].split("#")[-1] }
@@ -142,7 +143,7 @@ module HuobiApi
         end
 
         def on_error(event)
-          Log.error(self.class) { "Tracker connection error: #{event.message}" }
+          Log.debug(self.class) { "Tracker connection error: #{event.message}" }
         end
 
         def on_message(event)
@@ -157,7 +158,8 @@ module HuobiApi
             # 策略委托的委托请求数据(需手动查询得到)写入监控队列monitor_orders
 
             # 交易订单更新信息，不保存策略委托的委托请求
-            @orders[data[:orderId]].push(data) unless /^(?:trigger|deletion)$/.match?(data[:eventType])
+            # @orders[data[:orderId]].push(data) unless /^(?:trigger|deletion)$/.match?(data[:eventType])
+            @orders[data[:orderId] || data[:clientOrderId]].push(data)
             @monitor_orders.push(data)
 
             # puts "#{order_id}: #{data}"

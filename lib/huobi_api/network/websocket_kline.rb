@@ -156,20 +156,20 @@ module HuobiApi
 
         def on_close(event, type)
           ws = event.current_target
-          Log.info(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
+          Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
           # websocket被关闭，1秒后重连
           self.ws_reconnect(ws, type)
         end
 
         def on_error(event, type)
           ws = event.current_target
-          Log.error(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
+          Log.debug(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
           # 创建websocket连接出错，1秒后重连
           self.ws_reconnect(ws, type)
         end
 
         def ws_reconnect(old_ws, type)
-          Log.info(self.class) { "ws #{type} reconnect: #{old_ws.url}" }
+          Log.debug(self.class) { "ws #{type} reconnect: #{old_ws.url}" }
 
           # 先移除ws
           pool = type == "sub" ? @sub_ws_pool : @req_ws_pool

@@ -189,7 +189,7 @@ module HuobiApi
           price = options.fetch(:price).to_f.truncate(@price_precision)
           req_data[:orderPrice] = price
 
-          coin_amount = options.fetch(:amount) / price.to_f
+          coin_amount = options.fetch(:amount) / price.to_f    # usdt_amount to coin_amount
           req_data[:orderSize] = coin_amount.to_f.truncate(@amount_precision)
         elsif type == 'limit' and side == 'sell'
           req_data[:orderPrice] = options.fetch(:price).to_f.truncate(@price_precision)
