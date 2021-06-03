@@ -165,9 +165,8 @@ module HuobiApi
     #   rate: 回调幅度(范围[0.001,0.05])，设置该属性时，表明这是追踪委托，不设置该属性时，表明这是计划委托
     # 成功委托的返回值：{"data":{"clientOrderId":"xxx","errCode":null,"errMessage":null},"code":200,"success":true}
     def algo_order(type, stop_price, **options)
-      tmp = type.split('-')
-      side = tmp.grep(/buy|sell/)
-      type = tmp.grep(/limit|market/)
+      side = type[/buy|sell/]
+      type = type[/limit|market/]
       raise "#{self.class}##{__method__.to_s}: argument wrong" if side.nil? or type.nil?
 
       req_data = {
