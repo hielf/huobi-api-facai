@@ -35,8 +35,8 @@ module HuobiApi
 
         # 强制关闭ws连接，不会重建连接
         def close_force
-          ws.close_force = true
-          ws.close
+          self.close_force = true
+          self.close
         end
       end
 
