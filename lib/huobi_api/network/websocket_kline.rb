@@ -64,7 +64,7 @@ module HuobiApi
         # 关闭连接池
         # @param pool_type: sub(@sub_ws_pool)或req(@req_ws_pool)
         def close_ws_pool(pool_type = 'req')
-          pool = eval "#{pool_type}_ws_req"
+          pool = eval "#{pool_type}_ws_pool"
           pool.each(&:close_force)
         end
 
