@@ -18,14 +18,14 @@ module HuobiApi
         # tracker_reqs: 订阅订单更新通道时使用，每请求订阅一个币，记录该币订阅记录，每订阅成功一个币，删除该币订阅记录
         # error_reqs：订阅订单更新通道时使用，每当订阅某币订单更新失败时，错误请求数+1
         attr_accessor :authed, :uuid, :req, :reqs, :tracker_reqs, :error_reqs
-        attr_accessor :close_force  # 设置该标记后，ws关闭时不会重建连接
+        attr_accessor :force_close_flag  # 设置该标记后，ws关闭时不会重建连接
 
         def self.extended(target_ws)
           target_ws.uuid = SecureRandom.uuid
           target_ws.reqs = []
           target_ws.tracker_reqs = {}
           target_ws.error_reqs = 0
-          target_ws.close_force = false
+          target_ws.force_close_flag = false
         end
 
         # ws认证通过之后，应将该属性设置为true
@@ -35,7 +35,7 @@ module HuobiApi
 
         # 强制关闭ws连接，不会重建连接
         def close_force
-          self.close_force = true
+          self.force_close_flag = true
           self.close
         end
       end

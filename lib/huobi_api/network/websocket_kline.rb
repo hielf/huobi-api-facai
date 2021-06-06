@@ -39,7 +39,7 @@ module HuobiApi
           @req_ws_pool_size.times do
             ws = new_ws(WS_URLS[1] + '/ws', 'req')
             EM.schedule {
-              timer = EM::PeriodicTimer.new(0.1) do
+              timer = EM::PeriodicTimer.new(0.05) do
                 if Utils.ws_opened?(ws)
                   @req_ws_pool.push(ws)
                   timer.cancel
@@ -51,7 +51,7 @@ module HuobiApi
           @sub_ws_pool_size.times do
             ws = new_ws(WS_URLS[3] + '/ws', 'sub')
             EM.schedule {
-              timer = EM::PeriodicTimer.new(0.1) do
+              timer = EM::PeriodicTimer.new(0.05) do
                 if Utils.ws_opened?(ws)
                   @sub_ws_pool.push(ws)
                   timer.cancel
@@ -66,6 +66,7 @@ module HuobiApi
         def close_ws_pool(pool_type = 'req')
           pool = eval "#{pool_type}_ws_pool"
           pool.each(&:close_force)
+          pool.clear
         end
 
         # options: { type: 'realtime' }
@@ -157,14 +158,14 @@ module HuobiApi
           ws = event.current_target
           Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
           # websocket被关闭，重连
-          self.ws_reconnect(ws, type) unless ws.close_force
+          self.ws_reconnect(ws, type) unless ws.force_close_flag
         end
 
         def on_error(event, type)
           ws = event.current_target
           Log.debug(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
           # 创建websocket连接出错，重连
-          self.ws_reconnect(ws, type) unless self.ws_reconnect(ws, type)
+          self.ws_reconnect(ws, type) unless ws.force_close_flag
         end
 
         def ws_reconnect(old_ws, type)
