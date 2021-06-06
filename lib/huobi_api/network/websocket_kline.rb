@@ -8,14 +8,6 @@ module HuobiApi
         attr_accessor :sub_ws_pool, :req_ws_pool, :rt_kline_queue, :req_kline_queue
 
         def initialize
-          # @coin_prices = Hash.new do |hash, symbol|
-          #   hash[symbol] = {
-          #     rt_price: [], half_sec: [], sec: [], "5sec": [],
-          #     "1min": [], "5min": [], "15min": [], "30min": [],
-          #     "60min": [], "1day": [], "1week": []
-          #   }
-          # end
-
           # 保存接收到的K线数据(实时的或一次性请求的)
           @rt_kline_queue = []
           @req_kline_queue = []
@@ -67,6 +59,13 @@ module HuobiApi
               end
             }
           end
+        end
+
+        # 关闭连接池
+        # @param pool_type: sub(@sub_ws_pool)或req(@req_ws_pool)
+        def close_ws_pool(pool_type = 'req')
+          pool = eval "#{pool_type}_ws_req"
+          pool.each(&:close_force)
         end
 
         # options: { type: 'realtime' }
@@ -157,15 +156,15 @@ module HuobiApi
         def on_close(event, type)
           ws = event.current_target
           Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
-          # websocket被关闭，1秒后重连
-          self.ws_reconnect(ws, type)
+          # websocket被关闭，重连
+          self.ws_reconnect(ws, type) unless ws.close_force
         end
 
         def on_error(event, type)
           ws = event.current_target
           Log.debug(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
-          # 创建websocket连接出错，1秒后重连
-          self.ws_reconnect(ws, type)
+          # 创建websocket连接出错，重连
+          self.ws_reconnect(ws, type) unless self.ws_reconnect(ws, type)
         end
 
         def ws_reconnect(old_ws, type)
