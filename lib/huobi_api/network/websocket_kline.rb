@@ -65,7 +65,7 @@ module HuobiApi
         # @param pool_type: sub(@sub_ws_pool)或req(@req_ws_pool)
         def close_ws_pool(pool_type = 'req')
           pool = eval "#{pool_type}_ws_pool"
-          pool.each(&:close_force)
+          pool.each {|ws| ws.close_force(3001, "close and clear #{pool_type} ws pool")}
           pool.clear
         end
 
