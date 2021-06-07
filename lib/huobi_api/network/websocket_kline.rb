@@ -65,7 +65,7 @@ module HuobiApi
         # @param pool_type: sub(@sub_ws_pool)或req(@req_ws_pool)
         def close_ws_pool(pool_type = 'req')
           pool = eval "#{pool_type}_ws_pool"
-          pool.each {|ws| ws.close_force(3001, "close and clear #{pool_type} ws pool")}
+          pool.each {|ws| ws.close!(3001, "close and clear #{pool_type} ws pool")}
           pool.clear
         end
 
@@ -233,21 +233,6 @@ module HuobiApi
             Log.info(self.class) { "other msgs: #{data}" }
           end
         end
-
-        # # 一次性请求的数据直接保存即可
-        # def handle_oneshot_req_data(data)
-        #   symbol = data[:id].to_sym
-        #   period = data[:req].split(".")[-1].to_sym
-        #   @coin_prices[symbol][period] = data[:data]
-        # end
-        #
-        # # 实时价格需保存到rt_price数组，且需实时维护K线数据
-        # def handle_realtime_data(data)
-        #   symbol = data[:ch].split(".")[1].to_sym
-        #   tick = data[:tick]
-        #
-        #   rt_price = tick[:close]
-        # end
       end
     end
   end

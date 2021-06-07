@@ -215,8 +215,9 @@ module HuobiApi
     # 策略委托的撤单：只能撤销未触发时的委托单，已触发的委托单需使用submit_cancel来撤单
     def algo_order_cancel(client_order_ids)
       path = '/v2/algo-orders/cancellation'
+      id = (String === client_order_ids ? client_order_ids : client_order_ids.join(','))
       req_data = {
-        clientOrderIds: client_order_ids.join(',')
+        clientOrderIds: id
       }
       res = HuobiApi::Network::Rest.send_req('post', path, req_data)
       res
