@@ -311,17 +311,6 @@ module HuobiApi
   end
 end
 
-if __FILE__ == $PROGRAM_NAME
-  require 'pry'
-  binding.pry
-  _order = HuobiApi::Order.new('dkausdt')
-  # p order.submit_cancel(280980534854879)
-  # p order.submit_cancel_all
-  # p order.open_orders
-  # p order.order_history
-  # p order.order_details(280980534854879)
-end
-
 
 
 

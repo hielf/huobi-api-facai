@@ -33,11 +33,5 @@ module HuobiApi
   end
 end
 
-if __FILE__ == $PROGRAM_NAME
-  puts HuobiApi::Account.account_id
-  puts HuobiApi::Account.coin_balance('usdt')
-  puts HuobiApi::Account.coin_balance('dkausdt')
-end
-
 
 

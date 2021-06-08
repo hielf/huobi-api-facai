@@ -60,8 +60,6 @@ module HuobiApi
 
         ws
       end
-
-
     end
   end
 end

@@ -58,8 +58,3 @@ module HuobiApi
     end
   end
 end
-
-if __FILE__ == $PROGRAM_NAME
-  puts HuobiApi::Network::Utils.rest_auth_token('get', 'api.huobi.pro', '/order', 'wd=hello')
-  puts HuobiApi::Network::Utils.ws_auth_token('hello world')
-end

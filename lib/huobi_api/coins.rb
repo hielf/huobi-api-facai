@@ -129,17 +129,3 @@ module HuobiApi
     end
   end
 end
-
-if __FILE__ == $PROGRAM_NAME
-  require 'json'
-
-  # res = HuobiApi::Coins.all_coins_info
-  # File.open('all_symbols_info_v1.json', 'w') do |f|
-  #   JSON.dump res, f
-  # end
-
-  p HuobiApi::Coins.all_symbols
-  # puts HuobiApi::Coins.coin_info('nftusdt')
-  puts HuobiApi::Coins.coin_amount_precision('dkausdt')
-  puts HuobiApi::Coins.coin_price_precision('dkausdt')
-end
