@@ -35,30 +35,39 @@ module HuobiApi
           ws
         end
 
-        def init_ws_pool
-          @req_ws_pool_size.times do
+        # 初始化一次性请求价格K线的WS连接池
+        def init_req_ws_pool(pool_size = @req_ws_pool_size)
+          pool_size.times do
             ws = new_ws(WS_URLS[1] + '/ws', 'req')
             EM.schedule {
               timer = EM::PeriodicTimer.new(0.05) do
                 if Utils.ws_opened?(ws)
-                  @req_ws_pool.push(ws)
+                  req_ws_pool.push(ws)
                   timer.cancel
                 end
               end
             }
           end
+        end
 
-          @sub_ws_pool_size.times do
+        # 初始化实时价格K线的WS连接池
+        def init_sub_ws_pool(pool_size = @sub_ws_pool_size)
+          pool_size.times do
             ws = new_ws(WS_URLS[3] + '/ws', 'sub')
             EM.schedule {
               timer = EM::PeriodicTimer.new(0.05) do
                 if Utils.ws_opened?(ws)
-                  @sub_ws_pool.push(ws)
+                  sub_ws_pool.push(ws)
                   timer.cancel
                 end
               end
             }
           end
+        end
+
+        def init_ws_pool
+          init_req_ws_pool
+          init_sub_ws_pool
         end
 
         # 关闭连接池
