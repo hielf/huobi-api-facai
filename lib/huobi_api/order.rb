@@ -237,6 +237,21 @@ module HuobiApi
     end
 
     # 查询策略委托的委托详情
+    # 成功时返回
+    # {"code"=>200,
+    #  "data"=>
+    #   {"orderOrigTime"=>1623193741069,
+    #    "lastActTime"=>1623193741353,
+    #    "symbol"=>"dogeusdt",
+    #    "source"=>"api",
+    #    "clientOrderId"=>"algo_api_84413ec3-843e-4f74-96c8-eda64c750cda",
+    #    "orderSide"=>"sell",
+    #    "orderType"=>"market",
+    #    "orderSize"=>"18.1",
+    #    "accountId"=>19452218,
+    #    "timeInForce"=>"ioc",
+    #    "stopPrice"=>"0.335228",
+    #    "orderStatus"=>"created"}}
     def algo_order_details(client_order_id)
       path = '/v2/algo-orders/specific'
       req_data = {

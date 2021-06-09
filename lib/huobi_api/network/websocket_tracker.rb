@@ -19,17 +19,17 @@ module HuobiApi
           @orders = Hash.new {|orders, id| orders[id] = []}
           @monitor_orders = []
 
-          on_open = self.method(:on_open)
-          on_close = self.method(:on_close)
-          on_error = self.method(:on_error)
-          on_message = self.method(:on_message)
+          @ws = init_ws(@url)
+        end
+
+        def init_ws(url = @url)
           cbs = {
-            on_open: on_open,
-            on_close: on_close,
-            on_error: on_error,
-            on_message: on_message
+            on_open: self.method(:on_open),
+            on_close: self.method(:on_close),
+            on_error: self.method(:on_error),
+            on_message: self.method(:on_message)
           }
-          @ws = WebSocket::new_ws(@url, **cbs)
+          WebSocket::new_ws(url, **cbs)
         end
 
         def sub_channel(ws, symbol)
@@ -138,7 +138,7 @@ module HuobiApi
           # 重建连接，并重新订阅已订阅过的请求
           ws = event.current_target
           reqs = ws.reqs.map { |msg| msg[:ch].split("#")[-1] }
-          ws.reqs = []
+          @ws = init_ws(@url)
           sub_coins_channel(reqs)
         end
 
