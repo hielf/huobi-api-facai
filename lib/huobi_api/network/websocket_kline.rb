@@ -74,24 +74,63 @@ module HuobiApi
         # @param pool_type: sub(@sub_ws_pool)或req(@req_ws_pool)
         def close_ws_pool(pool_type = 'req')
           pool = eval "#{pool_type}_ws_pool"
-          pool.each {|ws| ws.close!(3001, "close and clear #{pool_type} ws pool")}
+          pool.each { |ws| ws.close!(3001, "close and clear #{pool_type} ws pool") }
           pool.clear
         end
 
         # options: { type: 'realtime' }
         #          { type: "1min", from: xxx, to: xxx} 其中from和to可选
+        # 注：
+        #  - 1.指定to不指定from时，从to向前获取300根K线
+        #  - 2.指定from不指定to时，获取最近的300根K线，等价于from未生效
+        #  - 3.不指定from和to时，获取最近的300根K线
+        #  - 官方说明一次性最多只能获取300根K线，但实际上可以获取更多，比如600根、900根
+        # 对于某类型K线起始时间点t1和下一根K线起始时间点t2来说：
+        #   - from == t1时，从t1开始请求，from > t1 时，从t2开始请求
+        #   - t2 > to >= t1时，将获取到t1为止(包含t1)
         def gen_req(symbol, **options)
           case options
           in { type: 'realtime' }
             JSON.dump({ sub: "market.#{symbol}.kline.1min", id: symbol })
           in { type: '1min' | '5min' | '15min' | '30min' | '60min' | '1day' | '1week' => type }
             h = { req: "market.#{symbol}.kline.#{type}", id: symbol }
-            h[:from] = options[:from] if options[:from]
-            h[:to] = options[:to] if options[:to]
+
+            # 官方给定的from和to的范围：[1501174800, 2556115200]
+            if options[:from]
+              h[:from] = (options[:from] < 1501174800 ? 1501174800 : options[:from])
+            end
+
+            if options[:to]
+              h[:to] = (options[:to] > 2556115200 ? 2556115200 : options[:to])
+            end
+
+            # 如果只有from没有to，手动补齐to(获取最多900根K线)
+            if h[:from] and h[:to].nil?
+              t = h[:from] + 900 * distance(type)
+              h[:to] = (t > 2556115200 ? 2556115200 : t)
+            end
+
             JSON.dump(h)
           else
-            raise "#{self.class}#gen_req}: argument wrong"
+            raise "#{self.class}##{__method__.to_s}: argument wrong"
           end
+        end
+
+        private def distance(type)
+          case type
+          when '1min'; 60 # 60
+          when '5min'; 300 # 5 * 60
+          when '15min'; 900 # 15 * 60
+          when '30min'; 1800 # 30 * 60
+          when '60min'; 3600 # 60 * 60
+          when '1day'; 86400 # 24 * 60 * 60
+          when '1week'; 604800 # 7 * 24 * 60 * 60
+          end
+        end
+
+        def send_req(ws, req)
+          ws.send(req)
+          ws.reqs.push(req)
         end
 
         # 订阅实时K线数据
@@ -105,7 +144,7 @@ module HuobiApi
 
         # 检查某币是否订阅了实时K线数据
         def subbed?(symbol)
-          @sub_ws_pool.any? {|ws| ws.reqs.any? {|req| req[:id] == symbol } }
+          @sub_ws_pool.any? { |ws| ws.reqs.any? { |req| req[:id] == symbol } }
         end
 
         # 请求一次性请求K线数据
@@ -152,6 +191,29 @@ module HuobiApi
                   tick_loop.stop
                 end
               end
+            end
+          end
+        end
+
+        def req_klines_by_reqs(reqs)
+          x = ->(some_reqs) {
+            while (req = some_reqs.pop)
+              while true
+                if (ws = @req_ws_pool.shift)
+                  send_req(ws, req)
+                  break
+                end
+                sleep 0.05
+              end
+            end
+          }
+
+          cnt = @req_ws_pool.size
+          reqs.each_slice(cnt).each do |some_reqs|
+            x.call(some_reqs)
+
+            while @req_ws_pool.size < cnt / 2
+              sleep 0.1
             end
           end
         end
@@ -221,7 +283,7 @@ module HuobiApi
 
         def handle_message(data, ws)
           case data
-          in { ch: _, tick: _} # 有tick字段，说明是订阅后推送的实时K线数据
+          in { ch: _, tick: _ } # 有tick字段，说明是订阅后推送的实时K线数据
             # handle_realtime_data(data)
             @rt_kline_queue.push(data)
           in { id: _, rep: _, status: 'ok', data: Array } # 有rep字段，说明是一次性请求的K线数据
@@ -246,4 +308,5 @@ module HuobiApi
     end
   end
 end
+
 
