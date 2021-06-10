@@ -81,9 +81,9 @@ module HuobiApi
         # options: { type: 'realtime' }
         #          { type: "1min", from: xxx, to: xxx} 其中from和to可选
         # 注：
-        #  - 1.指定to不指定from时，从to向前获取300根K线
-        #  - 2.指定from不指定to时，获取最近的300根K线，等价于from未生效
-        #  - 3.不指定from和to时，获取最近的300根K线
+        #  - 1.默认情况下，指定to不指定from时，从to向前获取300根K线
+        #  - 2.默认情况下，指定from不指定to时，获取最近的300根K线，等价于from未生效
+        #  - 3.默认情况下，不指定from和to时，获取最近的300根K线
         #  - 官方说明一次性最多只能获取300根K线，但实际上可以获取更多，比如600根、900根
         # 对于某类型K线起始时间点t1和下一根K线起始时间点t2来说：
         #   - from == t1时，从t1开始请求，from > t1 时，从t2开始请求
@@ -105,9 +105,31 @@ module HuobiApi
             end
 
             # 如果只有from没有to，手动补齐to(获取最多900根K线)
+            # 注：
+            #   - 如果from是K线起始点，直接 from + N * distance(type) 会获得N+1根K线
+            #   - 如果from不是K线起始点，直接 from + N * distance(type) 会获得N根K线
             if h[:from] and h[:to].nil?
-              t = h[:from] + 900 * distance(type)
+              if h[:from] % distance(type) == 0
+                t = h[:from] + 899 * distance(type)
+              else
+                t = h[:from] + 900 * distance(type)
+              end
+
               h[:to] = (t > 2556115200 ? 2556115200 : t)
+            end
+
+            # 如果只有 to 没有 from，手动补齐from(获取最多900根K线)
+            # 注：
+            #   - 如果to是K线起始点， 直接 to - N * distance(type) 会获得N+1根K线
+            #   - 如果to不是K线起始点，直接 to - N * distance(type) 会获得N根K线
+            if h[:to] and h[:from].nil?
+              if h[:to] % distance(type) == 0
+                t = h[:to] - 899 * distance(type)
+              else
+                t = h[:to] - 900 * distance(type)
+              end
+
+              h[:from] = (t < 1501174800 ? 1501174800 : t)
             end
 
             JSON.dump(h)
