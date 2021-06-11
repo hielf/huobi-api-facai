@@ -16,7 +16,7 @@ module HuobiApi
         def initialize
           @url = WS_URLS[0] + '/ws/v2'
           # id: order_id 或 client_order_id
-          @orders = Hash.new {|orders, id| orders[id] = []}
+          @orders = Hash.new { |orders, id| orders[id] = [] }
           @monitor_orders = []
 
           @ws = init_ws(@url)
@@ -40,13 +40,8 @@ module HuobiApi
         end
 
         def sub_coin_channel(symbol)
-          EM.schedule do
-            tick_loop = EM.tick_loop do
-              if self.ws.authed?
-                sub_channel(self.ws, symbol)
-                tick_loop.stop
-              end
-            end
+          ws.wait_authed do |ws|
+            sub_channel(ws, symbol)
           end
         end
 
@@ -67,11 +62,11 @@ module HuobiApi
           sub_reqs = lambda do |some_coins|
             EM.schedule do
               # 间隔检查订阅屏障，存在屏障时，等待屏障被移除
-              t = EM::PeriodicTimer.new(0.1) do
+              t = EM::PeriodicTimer.new(0.05) do
                 unless barrier
                   t.cancel
-                  self.ws.error_reqs = 0  # 每次发送请求都重置订阅错误数
-                  self.ws.tracker_reqs = {}  # 每次发送请求都清空之前所保存的请求
+                  self.ws.error_reqs = 0 # 每次发送请求都重置订阅错误数
+                  self.ws.tracker_reqs = {} # 每次发送请求都清空之前所保存的请求
                   some_coins.each { |symbol| sub_channel(self.ws, symbol) }
 
                   # 发送订阅请求后，立起屏障阻挡其他订阅，并监控本轮订阅的状态
@@ -87,7 +82,7 @@ module HuobiApi
           # 如果有失败的订阅，则重发这些失败的订阅请求
           wait_sub = lambda do
             EM.schedule do
-              timer = EM::PeriodicTimer.new(0.1) do
+              timer = EM::PeriodicTimer.new(0.05) do
                 # 已经成功订阅本阶段的所有请求
                 if self.ws.tracker_reqs.empty?
                   barrier = false
@@ -97,27 +92,22 @@ module HuobiApi
                 # 本阶段所有订阅已全部回应，但有失败的订阅
                 # 重新请求这些失败的订阅
                 if self.ws.error_reqs != 0 and self.ws.error_reqs == self.ws.tracker_reqs.size
-                  timer.cancel     # 重发请求后，取消本轮状态检查定时器，重发后会重新调用一次状态检查
-                  barrier = false  # 暂时移除屏障，使能重发订阅请求，或使其他sub_reqs订阅能继续
+                  timer.cancel # 重发请求后，取消本轮状态检查定时器，重发后会重新调用一次状态检查
+                  barrier = false # 暂时移除屏障，使能重发订阅请求，或使其他sub_reqs订阅能继续
                   sub_reqs.call(self.ws.tracker_reqs.keys)
                 end
               end
             end
           end
 
-          EM.schedule do
-            tick_loop = EM.tick_loop do
-              if self.ws.authed?
-                symbols.each_slice(40) { |some_coins| sub_reqs.call(some_coins) }
-                tick_loop.stop
-              end
-            end
+          ws.wait_authed do |ws|
+            symbols.each_slice(40) { |some_coins| sub_reqs.call(some_coins) }
           end
         end
 
         # 检查是否订阅了某币的订单更新通道
         def subbed?(symbol)
-          self.ws.reqs.any? {|req| req[:ch].split("#")[-1] == symbol }
+          self.ws.reqs.any? { |req| req[:ch].split("#")[-1] == symbol }
         end
 
         # 检查订阅成功的数量
@@ -151,7 +141,7 @@ module HuobiApi
           msg = JSON.parse(event.data, symbolize_names: true)
 
           case msg
-          in { action: "push", ch: /orders#.*usdt/, data:}
+          in { action: "push", ch: /orders#.*usdt/, data: }
             # 普通订单的数据写入orders
             # 普通订单的数据写入监控队列monitor_orders
             # 策略委托撤单(trigger)和委托失败(deletion)的数据相关写入监控队列monitor_orders

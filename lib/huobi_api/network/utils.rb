@@ -50,11 +50,6 @@ module HuobiApi
         params = params.merge({ 'signature' => sign(sign_data), 'authType' => 'api' })
         JSON.dump({ action: 'req', ch: 'auth', params: params })
       end
-
-      # ws是否处于打开状态
-      def self.ws_opened?(ws)
-        ws&.ready_state == Faye::WebSocket::OPEN
-      end
     end
   end
 end

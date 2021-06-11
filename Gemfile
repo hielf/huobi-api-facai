@@ -10,6 +10,4 @@ gem "rake", "~> 13.0"
 gem "minitest", "~> 5.0"
 gem 'eventmachine'
 gem 'faye-websocket'
-gem 'pry'
-gem 'async'
 gem 'httplog'
