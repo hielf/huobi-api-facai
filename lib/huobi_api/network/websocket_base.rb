@@ -36,7 +36,7 @@ module HuobiApi
         # 等待认证完成
         # 需给定语句块，在等待完成后会被执行
         def wait_authed
-          raise "#{self.class}##{__method__.to_s}: miss block" unless block_given?
+          raise "#{self.class}##{__method__.to_s}: missing block" unless block_given?
           EM.schedule do
             timer = EM::PeriodicTimer.new(0.01) do
               if authed?
@@ -55,7 +55,7 @@ module HuobiApi
         # 等待ws进入open状态
         # 需给定语句块，在等待完成后会被执行
         def wait_opened
-          raise "#{self.class}##{__method__.to_s}: miss block" unless block_given?
+          raise "#{self.class}##{__method__.to_s}: missing block" unless block_given?
           EM.schedule do
             timer = EM::PeriodicTimer.new(0.01) do
               if opened?

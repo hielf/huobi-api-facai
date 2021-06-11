@@ -91,53 +91,36 @@ module HuobiApi
         end
 
         # 等待从req连接池中取出一个ws
-        # 可给定语句块，将在获取到ws后执行语句块(传递ws作为语句块参数)
-        # 如果不给语句块，则阻塞等待后返回ws
+        # 需给定语句块，将在获取到ws后执行语句块(传递ws作为语句块参数)
         def get_ws_from_req_pool(size = @req_ws_pool.pool_size)
+          raise "missing block" unless block_given?
+
           pool = req_ws_pool
           init_req_ws_pool(size) unless pool.inited
 
-          if block_given?
-            EM.schedule do
-              timer = EM::PeriodicTimer.new(0.01) do
-                if pool.any?
-                  yield pool.shift
-                  timer.cancel
-                end
+          EM.schedule do
+            timer = EM::PeriodicTimer.new(0.01) do
+              if pool.any?
+                yield pool.shift
+                timer.cancel
               end
             end
-            return
-          end
-
-          loop do
-            if pool.any?
-              return pool.shift
-            end
-            sleep 0.01
           end
         end
 
         # 等待连接池初始化完成
-        # 可给定语句块，将在初始化完成后执行(传递pool作为语句块参数)
-        # 如果不给定语句块，则阻塞等待后返回
+        # 需给定语句块，将在初始化完成后执行(传递pool作为语句块参数)
         def wait_pool_init(pool_type = 'req')
-          pool = eval "#{pool_type}_ws_pool"
+          raise "missing block" unless block_given?
 
-          if block_given?
-            EM.schedule do
-              timer = EM::PeriodicTimer.new(0.01) do
-                if pool.pool_size == pool.size
-                  yield pool
-                  timer.cancel
-                end
+          pool = eval "#{pool_type}_ws_pool"
+          EM.schedule do
+            timer = EM::PeriodicTimer.new(0.01) do
+              if pool.pool_size == pool.size
+                yield pool
+                timer.cancel
               end
             end
-            return
-          end
-
-          while true
-            return if pool.pool_size == pool.size
-            sleep 0.01
           end
         end
 
@@ -223,15 +206,15 @@ module HuobiApi
         # 查找某币的K线起始时间点(多数情况下也即该币上线交易的时间点)
         # @return [Integer] epoch
         def kline_start_at(symbol)
-          queue = kline.req_kline_queue
-
+          queue = req_kline_queue
           cnt = 900 # 一次性请求900根周K线
 
           # 发送并获取请求得到的K线数据
           get_res = ->(req) {
-            ws = get_ws_from_req_pool
-            kline.send_req(ws, req)
+            raise "req ws pool is empty" unless req_ws_pool.any?
 
+            ws = req_ws_pool.shift
+            send_req(ws, req)
             while true
               sleep 0.05
               if (data = queue&.shift)
@@ -239,27 +222,21 @@ module HuobiApi
               end
             end
           }
-
           # 先找到从哪一周开始
           to = Time.now.to_i
           start_week_epoch = while true
-                               req = kline.gen_req(symbol, type: '1week', to: to)
-
+                               req = gen_req(symbol, type: '1week', to: to)
                                data = get_res.call(req)
-                               if data.empty?
-                                 to += cnt * distance('1week')
-                               elsif data.size < cnt
+                               if data.size < cnt
                                  break data[0][:id]
                                elsif data.size == cnt
                                  to = data[0][:id] - 1
                                end
                              end
-
           # 再从起始周查找5min K线，找到起始点
           from = start_week_epoch
           start_epoch = while true
-                          req = kline.gen_req(symbol, type: '5min', from: from)
-
+                          req = gen_req(symbol, type: '5min', from: from)
                           data = get_res.call(req)
                           if data.empty?
                             from += cnt * distance('5min')
@@ -269,7 +246,6 @@ module HuobiApi
                             from = data[-1][:id] + 1
                           end
                         end
-
           start_epoch
         end
 
@@ -292,15 +268,15 @@ module HuobiApi
         # 订阅某些指定币的实时K线数据
         def sub_coins_kline(coins)
           coins = Array[*coins]
+          pool = sub_ws_pool
 
-          unless @sub_ws_pool.inited
-            init_sub_ws_pool
-            wait_pool_init('sub')
-          end
+          init_sub_ws_pool unless pool.inited
 
-          coins.each_slice(coins.size / sub_ws_pool.pool_size + 1).each_with_index do |some_coins, idx|
-            ws = sub_ws_pool[idx]
-            some_coins.each { |symbol| sub_kline(ws, symbol) }
+          wait_pool_init('sub') do
+            coins.each_slice(coins.size / pool.pool_size + 1).each_with_index do |some_coins, idx|
+              ws = pool[idx]
+              some_coins.each { |symbol| sub_kline(ws, symbol) }
+            end
           end
         end
 
@@ -311,15 +287,17 @@ module HuobiApi
           coins = Array[*coins]
 
           coins.each do |symbol|
-            ws = get_ws_from_req_pool
-            req_kline(ws, symbol, **options)
+            get_ws_from_req_pool do |ws|
+              req_kline(ws, symbol, **options)
+            end
           end
         end
 
         def req_klines_by_reqs(reqs)
           while (req = reqs.shift)
-            ws = get_ws_from_req_pool
-            send_req(ws, req)
+            get_ws_from_req_pool do |ws|
+              send_req(ws, req)
+            end
           end
         end
 
