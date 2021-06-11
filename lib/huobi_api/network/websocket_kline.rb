@@ -63,13 +63,15 @@ module HuobiApi
 
         # 初始化实时价格K线的WS连接池
         def init_sub_ws_pool(pool_size = @sub_ws_pool.pool_size)
-          pool_size.times do
-            ws = new_ws(WS_URLS[3] + '/ws', 'sub')
+          EM.schedule do
+            pool_size.times do
+              ws = new_ws(WS_URLS[3] + '/ws', 'sub')
 
-            ws.wait_opened do |ws|
-              sub_ws_pool.push(ws)
-              sub_ws_pool.inited = true # 设置初始化标记
-              sub_ws_pool.pool_size = pool_size
+              ws.wait_opened do |ws|
+                sub_ws_pool.push(ws)
+                sub_ws_pool.inited = true # 设置初始化标记
+                sub_ws_pool.pool_size = pool_size
+              end
             end
           end
         end
