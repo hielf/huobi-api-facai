@@ -1,5 +1,6 @@
 require 'zlib'
 require_relative './websocket_base'
+require_relative './websocket_wspool'
 
 module HuobiApi
   module Network
@@ -17,110 +18,60 @@ module HuobiApi
           #   用于订阅实时K线数据，每个ws连接订阅一部分币的实时K线，无需从池中pop
           # req_ws_pool连接池：
           #   用于一次性请求，每次从池中pop取出一个ws连接，请求完一次后放回池中
-          @sub_ws_pool = []
-
-          class << @sub_ws_pool
-            attr_accessor :inited # 是否已初始化的标记
-            attr_accessor :pool_size
-          end
-
-          @sub_ws_pool.pool_size = 20 # 目前ws连接池的大小为20，可增大
-
-          @req_ws_pool = []
-
-          class << @req_ws_pool
-            attr_accessor :inited # 是否已初始化的标记
-            attr_accessor :pool_size
-          end
-
-          @req_ws_pool.pool_size = 32 # 目前ws连接池的大小为32，可增大
-        end
-
-        # @param type: 'sub' or 'req'
-        def new_ws(url, type)
-          return nil unless %w[sub req].include? type
-
-          ws = WebSocket::new_ws(url)
-          ws.on(:open) { |event| self.on_open(event, type) }
-          ws.on(:close) { |event| self.on_close(event, type) }
-          ws.on(:error) { |event| self.on_error(event, type) }
-          ws.on(:message) { |event| self.on_message(event, type) }
-          ws
+          @sub_ws_pool = nil
+          @req_ws_pool = nil
+          @sub_ws_url = WS_URLS[3] + '/ws'
+          @req_ws_url = WS_URLS[1] + '/ws'
         end
 
         # 初始化一次性请求价格K线的WS连接池
-        def init_req_ws_pool(pool_size = @req_ws_pool.pool_size)
-          pool_size.times do
-            ws = new_ws(WS_URLS[1] + '/ws', 'req')
+        def init_req_ws_pool(pool_size = 32)
+          init_ws_pool('req', pool_size)
 
-            ws.wait_opened do |ws|
-              req_ws_pool.push(ws)
-              req_ws_pool.inited = true # 设置初始化标记
-              req_ws_pool.pool_size = pool_size
-            end
-          end
+          # return if @req_ws_pool
+          #
+          # url = WS_URLS[1] + '/ws'
+          # cbs = {
+          #   on_open: self.method(:on_open),
+          #   on_close: self.method(:on_close),
+          #   on_error: self.method(:on_error),
+          #   on_message: self.method(:on_message),
+          # }
+          #
+          # @req_ws_pool = WSPool.new('req', pool_size, url, **cbs)
         end
 
         # 初始化实时价格K线的WS连接池
-        def init_sub_ws_pool(pool_size = @sub_ws_pool.pool_size)
-          EM.schedule do
-            pool_size.times do
-              ws = new_ws(WS_URLS[3] + '/ws', 'sub')
+        def init_sub_ws_pool(pool_size = 20)
+          init_ws_pool('sub', pool_size)
+        end
 
-              ws.wait_opened do |ws|
-                sub_ws_pool.push(ws)
-                sub_ws_pool.inited = true # 设置初始化标记
-                sub_ws_pool.pool_size = pool_size
-              end
-            end
+        def init_ws_pool(type = nil, pool_size = 32)
+          unless type.nil? or %w(all req sub).include?(type)
+            raise "argument wrong: type should be one of 'all, req, sub or nil'"
           end
-        end
 
-        def init_ws_pool
-          init_req_ws_pool
-          init_sub_ws_pool
-        end
-
-        # 关闭连接池
-        # @param pool_type: sub(@sub_ws_pool)或req(@req_ws_pool)
-        def close_ws_pool(pool_type = 'req')
-          pool = eval "#{pool_type}_ws_pool"
-          pool.each { |ws| ws.close!(3001, "close and clear #{pool_type} ws pool") }
-          pool.clear
-          pool.inited = false # 设置未初始化标记
-        end
-
-        # 等待从req连接池中取出一个ws
-        # 需给定语句块，将在获取到ws后执行语句块(传递ws作为语句块参数)
-        def get_ws_from_req_pool(size = @req_ws_pool.pool_size)
-          raise "missing block" unless block_given?
-
-          pool = req_ws_pool
-          init_req_ws_pool(size) unless pool.inited
-
-          EM.schedule do
-            timer = EM::PeriodicTimer.new(0.01) do
-              if pool.any?
-                yield pool.shift
-                timer.cancel
-              end
-            end
+          if type.nil? or type == 'all'
+            init_req_ws_pool
+            init_sub_ws_pool
+            return
           end
+
+          pool = eval "#{type}_ws_pool"
+          return if pool
+
+          url = eval "@#{type}_ws_url"
+          cbs = ws_event_handlers(type)
+
+          self.__send__ "#{type}_ws_pool=".to_sym, WSPool.new(pool_size, url, **cbs)
         end
 
-        # 等待连接池初始化完成
-        # 需给定语句块，将在初始化完成后执行(传递pool作为语句块参数)
-        def wait_pool_init(pool_type = 'req')
-          raise "missing block" unless block_given?
-
-          pool = eval "#{pool_type}_ws_pool"
-          EM.schedule do
-            timer = EM::PeriodicTimer.new(0.01) do
-              if pool.pool_size == pool.size
-                yield pool
-                timer.cancel
-              end
-            end
+        def pool(type)
+          case type
+          when 'sub' then sub_ws_pool
+          when 'req' then req_ws_pool
+          else
+            raise 'argument error: type should be "sub" or "req"'
           end
         end
 
@@ -204,16 +155,19 @@ module HuobiApi
         end
 
         # 查找某币的K线起始时间点(多数情况下也即该币上线交易的时间点)
+        # 注意，不要在
         # @return [Integer] epoch
         def kline_start_at(symbol)
           queue = req_kline_queue
+          pool = req_ws_pool
+          raise "req_ws_pool did'n initialized" unless pool
+          raise "req_ws_pool is not empty" if pool.any?
+
           cnt = 900 # 一次性请求900根周K线
 
           # 发送并获取请求得到的K线数据
           get_res = ->(req) {
-            raise "req ws pool is empty" unless req_ws_pool.any?
-
-            ws = req_ws_pool.shift
+            ws = pool.shift!
             send_req(ws, req)
             while true
               sleep 0.05
@@ -233,6 +187,7 @@ module HuobiApi
                                  to = data[0][:id] - 1
                                end
                              end
+          p start_week_epoch
           # 再从起始周查找5min K线，找到起始点
           from = start_week_epoch
           start_epoch = while true
@@ -262,17 +217,19 @@ module HuobiApi
 
         # 检查某币是否订阅了实时K线数据
         def subbed?(symbol)
-          @sub_ws_pool.any? { |ws| ws.reqs.any? { |req| req[:id] == symbol } }
+          raise "sub_ws_pool did'n initialized" unless sub_ws_pool
+
+          sub_ws_pool&.any? { |ws| ws.reqs.any? { |req| req[:id] == symbol } }
         end
 
         # 订阅某些指定币的实时K线数据
         def sub_coins_kline(coins)
           coins = Array[*coins]
+
+          init_ws_pool('sub') if sub_ws_pool.nil?
+
           pool = sub_ws_pool
-
-          init_sub_ws_pool unless pool.inited
-
-          wait_pool_init('sub') do
+          pool.wait_pool_init do
             coins.each_slice(coins.size / pool.pool_size + 1).each_with_index do |some_coins, idx|
               ws = pool[idx]
               some_coins.each { |symbol| sub_kline(ws, symbol) }
@@ -284,20 +241,25 @@ module HuobiApi
         # req_coins_kline(coins, type: '5min')
         # req_coins_kline(coins, type: '1min', from: xxx, to: xxx)
         def req_coins_kline(coins, **options)
+          raise "req_ws_pool didn't initialized" unless req_ws_pool
+
           coins = Array[*coins]
 
+          pool = req_ws_pool
           coins.each do |symbol|
-            get_ws_from_req_pool do |ws|
+            pool.shift! do |ws|
               req_kline(ws, symbol, **options)
             end
           end
         end
 
         def req_klines_by_reqs(reqs)
+          raise "req_ws_pool didn't initialized" unless req_ws_pool
+
+          pool = req_ws_pool
           while (req = reqs.shift)
-            get_ws_from_req_pool do |ws|
-              send_req(ws, req)
-            end
+            ws = pool.shift!
+            send_req(ws, req)
           end
         end
 
@@ -349,88 +311,109 @@ module HuobiApi
           ws.req = req
         end
 
-        private
+        private def ws_event_handlers(type)
+          on_open = nil
+          on_close = nil
+          on_error = nil
+          on_message = nil
+          ws_reconnect = nil
+          handle_message = nil
 
-        def on_open(event, type)
-          ws = event.current_target
-          Log.debug(self.class) { "ws #{type} connected(#{ws.url})" }
-        end
+          on_open = ->(event) {
+            ws = event.current_target
+            Log.debug(self.class) { "ws #{type} connected(#{ws.url})" }
+          }
 
-        def on_close(event, type)
-          ws = event.current_target
-          Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
-          # websocket被关闭，重连
-          self.ws_reconnect(ws, type) unless ws.force_close_flag
-        end
+          on_close = ->(event) {
+            ws = event.current_target
+            Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
+            # websocket被关闭，重连
+            ws_reconnect.call(ws) unless ws.force_close_flag
+          }
 
-        def on_error(event, type)
-          ws = event.current_target
-          Log.debug(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
-          # 创建websocket连接出错，重连
-          self.ws_reconnect(ws, type) unless ws.force_close_flag
-        end
+          on_error = ->(event) {
+            ws = event.current_target
+            Log.debug(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
+            # 创建websocket连接出错，重连
+            ws_reconnect.call(ws) unless ws.force_close_flag
+          }
 
-        def ws_reconnect(old_ws, type)
-          Log.debug(self.class) { "ws #{type} reconnect: #{old_ws.url}" }
+          on_message = ->(event) {
+            ws = event.current_target
+            blob_arr = event.data
+            data = JSON.parse(Zlib::gunzip(blob_arr.pack('c*')), symbolize_names: true)
+            if (ts = data[:ping])
+              ws.opened? && ws.send(JSON.dump({ "pong": ts }))
+            else
+              handle_message.call(data, ws)
+            end
+          }
 
-          # 先移除ws
-          pool = eval "#{type}_ws_pool"
-          pool.delete_if { |w| w.uuid == old_ws.uuid }
+          ws_reconnect = ->(old_ws) {
+            Log.debug(self.class) { "ws #{type} reconnect: #{old_ws.url}" }
 
-          # 创建新的ws，并等待其open之后加入到ws池中
-          ws = new_ws(old_ws.url, type)
+            # 先移除ws
+            pool = eval "#{type}_ws_pool"
+            pool.delete_by_uuid(old_ws.uuid)
 
-          ws.wait_opened do
-            if type == 'sub'
-              ws.reqs = old_ws.reqs
-              ws.reqs.each { |req| ws.send(req) }
-              pool.push(ws)
-            elsif type == 'req'
-              ws.req = old_ws.req
-              if ws.req # 如果ws上有请求，说明是正在请求中断开，应重发请求，接收数据后将自动放入连接池
-                ws.send(ws.req)
-              else
-                # 如果ws上没有请求，说明该ws处于空闲时断开，直接放进连接池
+            # 创建新的ws，并等待其open之后加入到ws池中
+            cbs = {
+              on_open: on_open,
+              on_close: on_close,
+              on_error: on_error,
+              on_message: on_message,
+            }
+            ws = pool.new_ws(old_ws.url, **cbs)
+
+            ws.wait_opened do
+              if type == 'sub'
+                ws.reqs = old_ws.reqs
+                ws.reqs.each { |req| ws.send(req) }
                 pool.push(ws)
+              elsif type == 'req'
+                ws.req = old_ws.req
+                if ws.req # 如果ws上有请求，说明是正在请求中断开，应重发请求，接收数据后将自动放入连接池
+                  ws.send(ws.req)
+                else
+                  # 如果ws上没有请求，说明该ws处于空闲时断开，直接放进连接池
+                  pool.push(ws)
+                end
               end
             end
-          end
+          }
+
+          handle_message = ->(data, ws) {
+            case data
+            in { ch: _, tick: _ } # 有tick字段，说明是订阅后推送的实时K线数据
+              # handle_realtime_data(data)
+              @rt_kline_queue.push(data)
+            in { id: _, rep: _, status: 'ok', data: Array } # 有rep字段，说明是一次性请求的K线数据
+              # handle_oneshot_req_data(data)
+              @req_kline_queue.push(data)
+              ws.req = nil # 收到数据后，移除ws上的req
+              @req_ws_pool.push(ws) # 将ws重新放回ws连接池
+            in { status: 'ok' } # 可能是订阅成功、取消订阅成功的响应信息
+              Log.debug(self.class) { "#{data.slice(:id, :status, :subbed)}" }
+              # {:id=>"gtusdt", :status=>"ok", :subbed=>"market.gtusdt.kline.1min", :ts=>1621512734085}
+            in { status: 'error' }
+              # {
+              #   :status=>"error", :ts=>1621517393030, :id=>"nftusdt", :"err-code"=>"bad-request",
+              #   :"err-msg"=>"symbol:nftusdt trade not open now "
+              # }
+              Log.error(self.class) { "error msgs: #{data}" }
+            else
+              Log.info(self.class) { "other msgs: #{data}" }
+            end
+          }
+
+          {
+            on_open: on_open,
+            on_close: on_close,
+            on_error: on_error,
+            on_message: on_message
+          }
         end
 
-        def on_message(event, _type)
-          ws = event.current_target
-          blob_arr = event.data
-          data = JSON.parse(Zlib::gunzip(blob_arr.pack('c*')), symbolize_names: true)
-          if (ts = data[:ping])
-            ws.opened? && ws.send(JSON.dump({ "pong": ts }))
-          else
-            handle_message(data, ws)
-          end
-        end
-
-        def handle_message(data, ws)
-          case data
-          in { ch: _, tick: _ } # 有tick字段，说明是订阅后推送的实时K线数据
-            # handle_realtime_data(data)
-            @rt_kline_queue.push(data)
-          in { id: _, rep: _, status: 'ok', data: Array } # 有rep字段，说明是一次性请求的K线数据
-            # handle_oneshot_req_data(data)
-            @req_kline_queue.push(data)
-            ws.req = nil # 收到数据后，移除ws上的req
-            @req_ws_pool.push(ws) # 将ws重新放回ws连接池
-          in { status: 'ok' } # 可能是订阅成功、取消订阅成功的响应信息
-            Log.debug(self.class) { "#{data.slice(:id, :status, :subbed)}" }
-            # {:id=>"gtusdt", :status=>"ok", :subbed=>"market.gtusdt.kline.1min", :ts=>1621512734085}
-          in { status: 'error' }
-            # {
-            #   :status=>"error", :ts=>1621517393030, :id=>"nftusdt", :"err-code"=>"bad-request",
-            #   :"err-msg"=>"symbol:nftusdt trade not open now "
-            # }
-            Log.error(self.class) { "error msgs: #{data}" }
-          else
-            Log.info(self.class) { "other msgs: #{data}" }
-          end
-        end
       end
     end
   end
