@@ -9,6 +9,11 @@ require_relative './network_url'
 module HuobiApi
   module Network
     module WebSocket
+      # 尽早开启EM.reactor
+      # 因为EM只能有一个事件循环reactor，因此不要再手动开启EM.run
+      # 如果需要使用EM的功能，直接EM.schedule
+      Thread.new { EM.run } unless EM.reactor_running?
+
       # 为ws对象提供一些额外的属性
       module WS_Extend
         # authed：记录ws是否已完成认证(订阅账户余额更新和订单更新时，需认证，行情数据无需认证)

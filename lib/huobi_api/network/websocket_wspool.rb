@@ -30,12 +30,13 @@ module HuobiApi
         end
 
         # 初始化WS连接池
+        # 池中的ws连接均已经处于open状态
         def init_ws_pool(pool_size = @pool_size, url, **cbs)
           EM.schedule do
             pool_size.times do
               ws = new_ws(url, **cbs)
 
-              ws.wait_opened { |ws| pool.push(ws) }
+              ws.wait_opened { pool.push(ws) }
             end
           end
         end
@@ -54,7 +55,6 @@ module HuobiApi
 
         # 给定语句块时，语句块将作为获取到ws后的回调，获取到的ws作为语句块参数
         # 不给语句块时，将阻塞直到获取到ws
-        # 使用阻塞方式时，要注意不要和异步初始化放在一起，它会让异步操作进入不了下一个tick loop
         def shift!
           if block_given?
             EM.schedule do
@@ -81,15 +81,25 @@ module HuobiApi
           pool.delete_if { |w| w.uuid == uuid }
         end
 
+        # 可给定语句块，此时将异步等待并等待初始化完成后执行语句块，连接池@pool作为语句块参数
+        # 如果不给定语句块，则阻塞等待
         def wait_pool_init
-          EM.schedule do
-            timer = EM::PeriodicTimer.new(0.01) do
-              if pool_size == pool.size
-                yield pool
-                timer.cancel
+          if block_given?
+            EM.schedule do
+              timer = EM::PeriodicTimer.new(0.01) do
+                if pool_size == pool.size
+                  yield self
+                  timer.cancel
+                end
               end
             end
+            return
           end
+
+          until pool_size == pool.size
+            sleep 1
+          end
+          self
         end
 
       end
