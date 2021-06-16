@@ -33,11 +33,10 @@ module HuobiApi
         # 初始化WS连接池
         # 池中的ws连接均已经处于open状态
         def init_ws_pool(pool_size = @pool_size, url, **cbs)
-          EM.schedule do
-            pool_size.times do
-              ws = new_ws(url, **cbs)
-
-              ws.wait_opened { pool.push(ws) }
+          pool_size.times do
+            ws = new_ws(url, **cbs)
+            ws.wait_opened do
+              pool.push(ws)
             end
           end
         end
@@ -59,20 +58,26 @@ module HuobiApi
         def shift!
           if block_given?
             EM.schedule do
-              timer = EM::PeriodicTimer.new(0.01) do
+              timer = EM::PeriodicTimer.new(0.05) do
                 (yield shift; timer.cancel) if any?
               end
             end
             return
           end
 
+
           Async do |task|
-            task.sleep 0.01 while empty?
+            task.sleep 0.05 while empty?
             shift
           end.wait
-        end
 
-        alias get_ws shift!
+          # t = Async do |task|
+          #   task.sleep 0.01 while empty?
+          #   break yield shift if block_given?
+          #   shift
+          # end
+          # t.wait
+        end
 
         def empty? = pool.empty?
 
@@ -100,12 +105,9 @@ module HuobiApi
           end
 
           Async do |task|
-            sleep 0.05 until pool_size == pool.size
+            task.sleep 0.05 until pool_size == pool.size
+            self
           end.wait
-          # until pool_size == pool.size
-          #   sleep 1
-          # end
-          self
         end
 
       end

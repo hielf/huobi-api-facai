@@ -147,7 +147,7 @@ module HuobiApi
         # 对于某类型K线起始时间点t1和下一根K线起始时间点t2来说：
         #    - from == t1时，从t1开始请求，from > t1 时，从t2开始请求
         #    - t2 > to >= t1时，将获取到t1为止(包含t1)
-        def self.gen_req(symbol, type, from: nil, to: nil)
+        def gen_req(symbol, type, from: nil, to: nil)
           valid_types = %w[1min 5min 15min 30min 60min 1day 1week]
           unless valid_types.include?(type)
             raise ArgumentError, " invalid type: #{type}, valid types: #{valid_types}"
@@ -182,30 +182,107 @@ module HuobiApi
                     })
         end
 
-        def self.distance(type)
-          case type
-          when '1min' then
-            60 # 60
-          when '5min' then
-            300 # 5 * 60
-          when '15min' then
-            900 # 15 * 60
-          when '30min' then
-            1800 # 30 * 60
-          when '60min' then
-            3600 # 60 * 60
-          when '1day' then
-            86400 # 24 * 60 * 60
-          when '1week' then
-            604800 # 7 * 24 * 60 * 60
+        # 获取币的K线起始时间点(多数情况下也即该币上线交易的时间点)
+        def kline_start_at(symbol)
+          tmp_data = []
+          cnt = 900   # 每次获取900根K线
+
+          # 新建一个临时ws
+          cbs = {
+            on_open: ->(_event) { Log.debug(self.class) { "ws connected" } },
+            on_close: ->(_event) { Log.debug(self.class) { "ws closed" } },
+            on_error: ->(_event) {},
+            on_message: ->(event) {
+              ws = event.current_target
+              blob_arr = event.data
+              data = JSON.parse(Zlib::gunzip(blob_arr.pack('c*')), symbolize_names: true)
+
+              case data
+              in { ping: ts }
+                ws.opened? && ws.send(JSON.dump({ "pong": ts }))
+              in { id:, rep:, status: 'ok', data: Array }
+                tmp_data << data
+              else
+                Log.debug(self.class) { "other msgs: #{data}" }
+              end
+            }
+          }
+          url = WS_URLS[0] + '/ws'
+          ws = WebSocket.new_ws(url, **cbs).wait_opened
+
+          get_res = ->(req) {
+            ws.send(req)
+
+            Async do |subtask|
+              subtask.sleep 0.05 until tmp_data.any?
+              tmp_data.shift[:data]
+            end.wait
+          }
+
+          # 找到从哪一周开始(为了防止起始周前面还有K线数据，找到的起始周-1)
+          find_week = ->(to = Time.now.to_i) {
+            req = gen_req(symbol, '1week', to: to)
+            data = get_res.call(req)
+            if data.size < cnt
+              data[0][:id] - distance('1week')
+            elsif data.size == cnt
+              to = data[0][:id] - 1
+              find_week.call(to = to)
+            end
+          }
+
+          # 找到起始周后，从起始周开始找到起始时间点
+          find_min = ->(from) {
+            req = gen_req(symbol, '30min', from: from)
+            data = get_res.call(req)
+            if data.empty?
+              from += cnt * distance('30min')
+              find_min.call(from)
+            elsif data.size < cnt
+              data[0][:id]
+            elsif data.size == cnt
+              from = data[-1][:id] + 1
+              find_min.call(from)
+            end
+          }
+
+          week_epoch = find_week.call
+          start_time = find_min.call(week_epoch)
+          ws.close
+          start_time
+        end
+
+        # 查找一个或多个币的K线起始时间点
+        # @param symbols 数组
+        # @return {btcusdt: 12121212, ethusdt: 213232323,...}
+        def klines_start_at(symbols)
+          times = {}
+
+          # 最大并发64个查询
+          symbols.each_slice(64).each do |some_coins|
+            Async do |task|
+              some_coins.each do |symbol|
+                Async do |subtask|
+                  times[symbol] = kline_start_at(symbol)
+                end
+              end
+            end
+          end
+
+          times
+        end
+
+        # 生成某币某个K线类型的所有请求(从最早的第一根K线到目前为止，每个请求获取900根K线)
+        # @param type '1min', '5min', '15min', '30min', '60min', '1day', '1week'
+        def gen_coin_all_reqs(symbol, type)
+          cnt = 900
+          start_time = kline_start_at(symbol)
+          (start_time..Time.now.to_i)
+            .step(cnt * distance(type))
+            .map do |from|
+            gen_req(symbol, type, from: from)
           end
         end
-
-        def gen_req(symbol, type, from: nil, to: nil)
-          self.class.gen_req(symbol, type, from: from, to: to)
-        end
-
-
 
         def req_coins_kline(coins, type, from: nil, to: nil)
           coins = Array[*coins]
@@ -240,6 +317,25 @@ module HuobiApi
           req = gen_req(symbol, type, from: from, to: to)
           ws.send(req)
           ws.req = req
+        end
+
+        private def distance(type)
+          case type
+          when '1min' then
+            60 # 60
+          when '5min' then
+            300 # 5 * 60
+          when '15min' then
+            900 # 15 * 60
+          when '30min' then
+            1800 # 30 * 60
+          when '60min' then
+            3600 # 60 * 60
+          when '1day' then
+            86400 # 24 * 60 * 60
+          when '1week' then
+            604800 # 7 * 24 * 60 * 60
+          end
         end
       end
 

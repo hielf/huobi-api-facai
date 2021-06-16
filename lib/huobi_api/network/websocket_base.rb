@@ -60,15 +60,24 @@ module HuobiApi
         # 等待ws进入open状态
         # 需给定语句块，在等待完成后会被执行
         def wait_opened
-          raise "missing block" unless block_given?
-          EM.schedule do
-            timer = EM::PeriodicTimer.new(0.01) do
-              if opened?
-                yield self
-                timer.cancel
+          # raise "missing block" unless block_given?
+
+          if block_given?
+            EM.schedule do
+              timer = EM::PeriodicTimer.new(0.05) do
+                if opened?
+                  yield self
+                  timer.cancel
+                end
               end
             end
+            return
           end
+
+          Async do |subtask|
+            subtask.sleep 0.05 until opened?
+            self
+          end.wait
         end
 
         # 强制关闭ws连接，不会重建连接
