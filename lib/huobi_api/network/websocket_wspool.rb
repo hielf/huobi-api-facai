@@ -1,4 +1,5 @@
 require_relative './websocket_base'
+require 'async'
 
 module HuobiApi
   module Network
@@ -65,8 +66,10 @@ module HuobiApi
             return
           end
 
-          sleep 0.01 while empty?
-          shift
+          Async do |task|
+            task.sleep 0.01 while empty?
+            shift
+          end.wait
         end
 
         alias get_ws shift!
@@ -96,9 +99,12 @@ module HuobiApi
             return
           end
 
-          until pool_size == pool.size
-            sleep 1
-          end
+          Async do |task|
+            sleep 0.05 until pool_size == pool.size
+          end.wait
+          # until pool_size == pool.size
+          #   sleep 1
+          # end
           self
         end
 

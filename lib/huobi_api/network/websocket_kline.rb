@@ -129,101 +129,96 @@ module HuobiApi
       end
 
       class ReqKLine < BaseKLine
-        def initialize
-          super
+        def initialize(pool_size = 32, url = nil)
+          super()
 
+          url = url || (WS_URLS[1] + '/ws')
           # ws连接池，池中的ws连接均已经处于open状态
           # 用于一次性请求，每次从池中pop取出一个ws连接，请求完一次后放回池中
-          create_ws_pool(32, WS_URLS[1] + '/ws', 'req').wait_pool_init
+          create_ws_pool(pool_size, url, 'req').wait_pool_init
         end
 
-        # options: { type: "1min", from: xxx, to: xxx} 其中from和to可选
-        # 注：对于一次性请求时
-        #   - 1.默认情况下，指定to不指定from时，从to向前获取300根K线
-        #   - 2.默认情况下，指定from不指定to时，获取最近的300根K线，等价于from未生效
-        #   - 3.默认情况下，不指定from和to时，获取最近的300根K线
-        #   - 官方说明一次性最多只能获取300根K线，但实际上可以获取更多，比如600根、900根
-        #   - 本方法对默认行为做了改变，在没有同时指定from和to时，默认生成可获取900根K线的req
+        # 1.默认情况下，指定to不指定from时，从to向前获取300根K线
+        # 2.默认情况下，指定from不指定to时，获取最近的300根K线，等价于from未生效
+        # 3.默认情况下，不指定from和to时，获取最近的300根K线
+        # 官方说明一次性最多只能获取300根K线，但实际上可以获取更多，比如600根、900根
+        # 本方法对默认行为做了改变，总是会补齐from和to，效果是：
+        #       在没有同时指定from和to时，默认生成可获取900根K线的req
         # 对于某类型K线起始时间点t1和下一根K线起始时间点t2来说：
         #    - from == t1时，从t1开始请求，from > t1 时，从t2开始请求
         #    - t2 > to >= t1时，将获取到t1为止(包含t1)
-        def gen_req(symbol, type, from: nil, to: nil)
+        def self.gen_req(symbol, type, from: nil, to: nil)
           valid_types = %w[1min 5min 15min 30min 60min 1day 1week]
           unless valid_types.include?(type)
-            raise ArgumentError, "type should be one of these values: #{valid_types}"
+            raise ArgumentError, " invalid type: #{type}, valid types: #{valid_types}"
           end
 
-          x = -> {
-            hash = {}
+          # 如果只有 to 没有 from，手动补齐from(获取最多900根K线)
+          # 注：
+          #   - 如果to是K线起始点， 直接 to - N * distance(type) 会获得N+1根K线
+          #   - 如果to不是K线起始点，直接 to - N * distance(type) 会获得N根K线
+          # 如果只有 from 没有 to，手动补齐to(获取最多900根K线)
+          # 注：
+          #   - 如果from是K线起始点，直接 from + N * distance(type) 会获得N+1根K线
+          #   - 如果from不是K线起始点，直接 from + N * distance(type) 会获得N根K线
+          # 如果既没有from，也没有to，则手动补齐获取最近的900根K线
+          case [from, to]
+          in [nil, nil | Integer]
+            to = (to.nil? ? Time.now.to_i : to)
+            from = to - (to % distance(type) == 0 ? 899 : 900) * distance(type)
+          in [Integer, nil]
+            to = from + (from % distance(type) == 0 ? 899 : 900) * distance(type)
+          in [Integer, Integer]
+          else
+            raise ArgumentError, "invalid time range: #{[from, to]}"
+          end
 
-            # 官方给定的from和to的范围：[1501174800, 2556115200]
-            if from
-              hash[:from] = (from < 1501174800 ? 1501174800 : from)
-            end
-
-            if to
-              hash[:to] = (to > 2556115200 ? 2556115200 : to)
-            end
-
-            # 如果只有from没有to，手动补齐to(获取最多900根K线)
-            # 注：
-            #   - 如果from是K线起始点，直接 from + N * distance(type) 会获得N+1根K线
-            #   - 如果from不是K线起始点，直接 from + N * distance(type) 会获得N根K线
-            if hash[:from] and hash[:to].nil?
-              if hash[:from] % distance(type) == 0
-                t = hash[:from] + 899 * distance(type)
-              else
-                t = hash[:from] + 900 * distance(type)
-              end
-
-              hash[:to] = (t > 2556115200 ? 2556115200 : t)
-            end
-
-            # 如果只有 to 没有 from，手动补齐from(获取最多900根K线)
-            # 注：
-            #   - 如果to是K线起始点， 直接 to - N * distance(type) 会获得N+1根K线
-            #   - 如果to不是K线起始点，直接 to - N * distance(type) 会获得N根K线
-            if hash[:to] and hash[:from].nil?
-              if hash[:to] % distance(type) == 0
-                t = hash[:to] - 899 * distance(type)
-              else
-                t = hash[:to] - 900 * distance(type)
-              end
-
-              hash[:from] = (t < 1501174800 ? 1501174800 : t)
-            end
-
-            if hash[:from].nil? and hash[:to].nil?
-              hash[:to] = Time.now.to_i
-              if hash[:to] % distance(type) == 0
-                t = hash[:to] - 899 * distance(type)
-              else
-                t = hash[:to] - 900 * distance(type)
-              end
-
-              hash[:from] = (t < 1501174800 ? 1501174800 : t)
-            end
-
-            return hash
-          }
-
-          h = { req: "market.#{symbol}.kline.#{type}", id: symbol }
-          h = h.merge(x.call)
-          JSON.dump(h)
+          # 官方给定的from和to的范围：[1501174800, 2556115200]
+          JSON.dump({
+                      req: "market.#{symbol}.kline.#{type}",
+                      id: symbol,
+                      from: from < 1501174800 ? 1501174800 : from,
+                      to: to > 2556115200 ? 2556115200 : to
+                    })
         end
+
+        def self.distance(type)
+          case type
+          when '1min' then
+            60 # 60
+          when '5min' then
+            300 # 5 * 60
+          when '15min' then
+            900 # 15 * 60
+          when '30min' then
+            1800 # 30 * 60
+          when '60min' then
+            3600 # 60 * 60
+          when '1day' then
+            86400 # 24 * 60 * 60
+          when '1week' then
+            604800 # 7 * 24 * 60 * 60
+          end
+        end
+
+        def gen_req(symbol, type, from: nil, to: nil)
+          self.class.gen_req(symbol, type, from: from, to: to)
+        end
+
+
 
         def req_coins_kline(coins, type, from: nil, to: nil)
           coins = Array[*coins]
 
           coins.each do |symbol|
             ## async version
-            ws_pool.shift! do |ws|
-              req_kline(ws, symbol, type, from: from, to: to)
-            end
+            # ws_pool.shift! do |ws|
+            #   req_kline(ws, symbol, type, from: from, to: to)
+            # end
 
             ## block version
-            # ws = ws_pool.shift!
-            # req_kline(ws, symbol, type, from: from, to: to)
+            ws = ws_pool.shift!
+            req_kline(ws, symbol, type, from: from, to: to)
           end
         end
 
@@ -245,25 +240,6 @@ module HuobiApi
           req = gen_req(symbol, type, from: from, to: to)
           ws.send(req)
           ws.req = req
-        end
-
-        private def distance(type)
-          case type
-          when '1min' then
-            60 # 60
-          when '5min' then
-            300 # 5 * 60
-          when '15min' then
-            900 # 15 * 60
-          when '30min' then
-            1800 # 30 * 60
-          when '60min' then
-            3600 # 60 * 60
-          when '1day' then
-            86400 # 24 * 60 * 60
-          when '1week' then
-            604800 # 7 * 24 * 60 * 60
-          end
         end
       end
 
