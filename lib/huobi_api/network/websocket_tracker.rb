@@ -123,13 +123,19 @@ module HuobiApi
           ws.send(Utils.ws_auth_token(URI(ws.url).host))
         end
 
+        # 注意，on_close、on_open、on_error、on_message事件触发后的任务都被追加到EM.reactor_thread中运行，
+        # 因此重建ws连接时可能的阻塞操作(如sleep、Async task block)将导致EM的某些任务无法调度。
+        # 为了避免可能的阻塞，直接在新线程中运行ws_reconnect任务
         def on_close(event)
           Log.debug(self.class) { "Tracker connection closed: #{event.reason}" }
           # 重建连接，并重新订阅已订阅过的请求
           ws = event.current_target
           reqs = ws.reqs.map { |msg| msg[:ch].split("#")[-1] }
-          @ws = init_ws(@url)
-          sub_coins_channel(reqs)
+
+          Thread.new do
+            @ws = init_ws(@url)
+            sub_coins_channel(reqs)
+          end
         end
 
         def on_error(event)

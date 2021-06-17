@@ -53,7 +53,7 @@ module HuobiApi
             # 因此ws_reconnect中可能的阻塞操作(如sleep、Async task block)将导致EM的某些任务无法调度。
             # 为了避免可能的阻塞，直接在新线程中运行ws_reconnect任务
             Thread.new do
-              ws_reconnect.call(ws) unless ws.force_close_flag or EM.respond_to?(:exiting)
+              ws_reconnect.call(ws) unless ws.force_close_flag # or EM.respond_to?(:exiting)
             end
           }
 
@@ -64,7 +64,7 @@ module HuobiApi
 
             # 使用新线程执行ws_reconnect的原因同上
             Thread.new do
-              ws_reconnect.call(ws) unless ws.force_close_flag or EM.respond_to?(:exiting)
+              ws_reconnect.call(ws) unless ws.force_close_flag #or EM.respond_to?(:exiting)
             end
           }
 

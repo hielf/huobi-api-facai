@@ -15,14 +15,13 @@ module HuobiApi
       # 如果需要使用EM的功能，直接EM.schedule
       # Thread.new { EM.run } unless EM.reactor_running?
       # Thread.pass until EventMachine.reactor_running?
-      p Thread.current
       unless EM.reactor_running?
         Thread.new do
           EM.run do
-            EM.add_shutdown_hook do
-              # 定义一个EM退出时的标记
-              def EM.exiting = true
-            end
+            # EM.add_shutdown_hook do
+            #   # 定义一个EM退出时的标记
+            #   def EM.exiting = true
+            # end
           end
         end
       end
