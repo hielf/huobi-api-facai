@@ -1,5 +1,4 @@
 require_relative './websocket_base'
-require 'async'
 
 module HuobiApi
   module Network
@@ -33,10 +32,12 @@ module HuobiApi
         # 初始化WS连接池
         # 池中的ws连接均已经处于open状态
         def init_ws_pool(pool_size = @pool_size, url, **cbs)
-          pool_size.times do
-            ws = new_ws(url, **cbs)
-            ws.wait_opened do
-              pool.push(ws)
+          Async do |task|
+            pool_size.times do
+              ws = new_ws(url, **cbs)
+              ws.wait_opened do
+                pool.push(ws)
+              end
             end
           end
         end
@@ -56,32 +57,21 @@ module HuobiApi
         # 给定语句块时，语句块将作为获取到ws后的回调，获取到的ws作为语句块参数
         # 不给语句块时，将阻塞直到获取到ws
         def shift!
-          if block_given?
-            EM.schedule do
-              timer = EM::PeriodicTimer.new(0.05) do
-                (yield shift; timer.cancel) if any?
-              end
-            end
-            return
+          t = Async do |task|
+            task.sleep 0.01 while empty?
+            next yield shift if block_given?
+            shift
           end
 
-
-          Async do |task|
-            task.sleep 0.05 while empty?
-            shift
-          end.wait
-
-          # t = Async do |task|
-          #   task.sleep 0.01 while empty?
-          #   break yield shift if block_given?
-          #   shift
-          # end
-          # t.wait
+          return t if block_given?
+          t.wait
         end
 
         def empty? = pool.empty?
 
-        def any? = pool.any?
+        def any?(...)
+          pool.any?(...)
+        end
 
         def size = pool.size
 
@@ -92,24 +82,16 @@ module HuobiApi
         # 可给定语句块，此时将异步等待并等待初始化完成后执行语句块，连接池@pool作为语句块参数
         # 如果不给定语句块，则阻塞等待
         def wait_pool_init
-          if block_given?
-            EM.schedule do
-              timer = EM::PeriodicTimer.new(0.01) do
-                if pool_size == pool.size
-                  yield self
-                  timer.cancel
-                end
-              end
-            end
-            return
+          t = Async do |subtask|
+            subtask.sleep 0.05 until pool_size == pool.size
+
+            next yield self if block_given?
+            self
           end
 
-          Async do |task|
-            task.sleep 0.05 until pool_size == pool.size
-            self
-          end.wait
+          return t if block_given?
+          t.wait
         end
-
       end
     end
   end

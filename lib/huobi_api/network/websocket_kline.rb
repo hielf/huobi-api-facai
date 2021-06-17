@@ -48,14 +48,24 @@ module HuobiApi
             ws = event.current_target
             Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
             # websocket被关闭，重连
-            ws_reconnect.call(ws) unless ws.force_close_flag
+
+            # 注意，on_close、on_open、on_error、on_message事件触发后的任务都被追加到EM.reactor_thread中运行，
+            # 因此ws_reconnect中可能的阻塞操作(如sleep、Async task block)将导致EM的某些任务无法调度。
+            # 为了避免可能的阻塞，直接在新线程中运行ws_reconnect任务
+            Thread.new do
+              ws_reconnect.call(ws) unless ws.force_close_flag or EM.respond_to?(:exiting)
+            end
           }
 
           on_error = ->(event) {
             ws = event.current_target
             Log.debug(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
             # 创建websocket连接出错，重连
-            ws_reconnect.call(ws) unless ws.force_close_flag
+
+            # 使用新线程执行ws_reconnect的原因同上
+            Thread.new do
+              ws_reconnect.call(ws) unless ws.force_close_flag or EM.respond_to?(:exiting)
+            end
           }
 
           on_message = ->(event) {
@@ -101,7 +111,9 @@ module HuobiApi
 
             # 创建新的ws，并等待其open之后加入到ws池中
             cbs = ws_event_handlers(type)
-            ws = pool.new_ws(old_ws.url, **cbs)
+
+            ws = WebSocket.new_ws(old_ws.url, **cbs)
+
             ws.wait_opened do
               if type == 'sub'
                 ws.reqs = old_ws.reqs
@@ -185,7 +197,7 @@ module HuobiApi
         # 获取币的K线起始时间点(多数情况下也即该币上线交易的时间点)
         def kline_start_at(symbol)
           tmp_data = []
-          cnt = 900   # 每次获取900根K线
+          cnt = 900 # 每次获取900根K线
 
           # 新建一个临时ws
           cbs = {
@@ -354,7 +366,12 @@ module HuobiApi
 
         # 检查某币是否订阅了实时K线数据
         def subbed?(symbol)
-          ws_pool.any? { |ws| ws.reqs.any? { |req| req[:id] == symbol } }
+          # reqs:
+          # [
+          #   "{\"sub\":\"market.sandusdt.kline.1min\",\"id\":\"sandusdt\"}",
+          #   "{\"sub\":\"market.gtusdt.kline.1min\",\"id\":\"gtusdt\"}",
+          # ]
+          ws_pool.any? { |ws| ws.reqs.any? { |req| req.include?(symbol) } }
         end
 
         # 订阅某些指定币的实时K线数据

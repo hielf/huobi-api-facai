@@ -2,6 +2,7 @@ PATH
   remote: .
   specs:
     huobi_api (0.1.1)
+      async
       faye-websocket (~> 0.11.0)
       httplog
 

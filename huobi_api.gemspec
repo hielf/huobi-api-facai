@@ -31,6 +31,7 @@ Gem::Specification.new do |spec|
 
   # Uncomment to register a new dependency of your gem
   spec.add_dependency "faye-websocket", "~> 0.11.0"
+  spec.add_dependency "async"
   spec.add_dependency "httplog"
 
   # For more information and examples about making a new gem, checkout our

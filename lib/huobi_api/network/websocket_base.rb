@@ -1,6 +1,7 @@
 require 'faye/websocket'
 require 'json'
 require 'securerandom'
+require 'async'
 
 require_relative './../base'
 require_relative './utils'
@@ -12,7 +13,20 @@ module HuobiApi
       # 尽早开启EM.reactor
       # 因为EM只能有一个事件循环reactor，因此不要再手动开启EM.run
       # 如果需要使用EM的功能，直接EM.schedule
-      Thread.new { EM.run } unless EM.reactor_running?
+      # Thread.new { EM.run } unless EM.reactor_running?
+      # Thread.pass until EventMachine.reactor_running?
+      p Thread.current
+      unless EM.reactor_running?
+        Thread.new do
+          EM.run do
+            EM.add_shutdown_hook do
+              # 定义一个EM退出时的标记
+              def EM.exiting = true
+            end
+          end
+        end
+      end
+      Thread.pass until EM.reactor_running?
 
       # 为ws对象提供一些额外的属性
       module WS_Extend
@@ -23,7 +37,7 @@ module HuobiApi
         # tracker_reqs: 订阅订单更新通道时使用，每请求订阅一个币，记录该币订阅记录，每订阅成功一个币，删除该币订阅记录
         # error_reqs：订阅订单更新通道时使用，每当订阅某币订单更新失败时，错误请求数+1
         attr_accessor :authed, :uuid, :req, :reqs, :tracker_reqs, :error_reqs
-        attr_accessor :force_close_flag  # 设置该标记后，ws关闭时不会重建连接
+        attr_accessor :force_close_flag # 设置该标记后，ws关闭时不会重建连接
 
         def self.extended(target_ws)
           target_ws.uuid = SecureRandom.uuid
@@ -41,15 +55,13 @@ module HuobiApi
         # 等待认证完成
         # 需给定语句块，在等待完成后会被执行
         def wait_authed
-          raise "missing block" unless block_given?
-          EM.schedule do
-            timer = EM::PeriodicTimer.new(0.01) do
-              if authed?
-                yield self
-                timer.cancel
-              end
-            end
+          t = Async do |task|
+            task.sleep 0.05 until authed?
+            next yield self if block_given?
+            self
           end
+          return t if block_given?
+          t.wait
         end
 
         # ws已open?
@@ -60,24 +72,15 @@ module HuobiApi
         # 等待ws进入open状态
         # 需给定语句块，在等待完成后会被执行
         def wait_opened
-          # raise "missing block" unless block_given?
+          t = Async do |subtask|
+            subtask.sleep 0.05 until opened?
 
-          if block_given?
-            EM.schedule do
-              timer = EM::PeriodicTimer.new(0.05) do
-                if opened?
-                  yield self
-                  timer.cancel
-                end
-              end
-            end
-            return
+            next yield self if block_given?
+            self
           end
 
-          Async do |subtask|
-            subtask.sleep 0.05 until opened?
-            self
-          end.wait
+          return t if block_given?
+          t.wait
         end
 
         # 强制关闭ws连接，不会重建连接
