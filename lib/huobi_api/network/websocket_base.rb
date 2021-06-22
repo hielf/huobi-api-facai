@@ -37,6 +37,8 @@ module HuobiApi
         # error_reqs：订阅订单更新通道时使用，每当订阅某币订单更新失败时，错误请求数+1
         attr_accessor :authed, :uuid, :req, :reqs, :tracker_reqs, :error_reqs
         attr_accessor :force_close_flag # 设置该标记后，ws关闭时不会重建连接
+        # 标记该ws是否处于正在open，当ws成功open后，被设置为false
+        attr_accessor :opening
 
         def self.extended(target_ws)
           target_ws.uuid = SecureRandom.uuid
@@ -44,6 +46,7 @@ module HuobiApi
           target_ws.tracker_reqs = {}
           target_ws.error_reqs = 0
           target_ws.force_close_flag = false
+          target_ws.opening = true
         end
 
         # ws认证通过之后，应将该属性设置为true
@@ -54,7 +57,7 @@ module HuobiApi
         # 等待认证完成
         # 需给定语句块，在等待完成后会被执行
         def wait_authed
-          t = Async do |task|
+          t = Async(annotation: 'wait authed') do |task|
             task.sleep 0.05 until authed?
             next yield self if block_given?
             self
@@ -68,15 +71,27 @@ module HuobiApi
           self.ready_state == Faye::WebSocket::OPEN
         end
 
+        def closed?
+          self.ready_state == Faye::WebSocket::CLOSED
+        end
+
         # 等待ws进入open状态
         # 需给定语句块，在等待完成后会被执行
         def wait_opened
-          t = Async do |subtask|
-            subtask.sleep 0.05 until opened?
+          t = Async(annotation: 'wait ws opened') do |subtask|
+            n = 0
+            until opened? or closed?
+              subtask.sleep 0.05
+              n += 1
+              p ["wait ws open: (state: #{ready_state}/#{Faye::WebSocket::OPEN}), #{uuid}", req] if n % 100 == 0
+            end
 
+            (p 'closed............................';next) if closed?
             next yield self if block_given?
             self
           end
+
+          return if closed?
 
           return t if block_given?
           t.wait
@@ -86,6 +101,10 @@ module HuobiApi
         def close!(code = nil, reason = nil)
           self.force_close_flag = true
           self.close(code, reason)
+        end
+
+        def inspect
+          "#<ws: {state: #{ready_state}}, #{url}, #{uuid}>"
         end
       end
 

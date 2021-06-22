@@ -27,6 +27,7 @@ module HuobiApi
           cbs = ws_event_handlers(type)
 
           @ws_pool = WSPool.new(pool_size, url, **cbs)
+          @ws_pool.init
           @ws_pool_size = pool_size
           @ws_url = url
           @ws_pool
@@ -41,12 +42,18 @@ module HuobiApi
 
           on_open = ->(event) {
             ws = event.current_target
+            ws.opening = false
             Log.debug(self.class) { "ws #{type} connected(#{ws.url})" }
+          }
+
+          on_error = ->(event) {
+            ws = event.current_target
+            Log.debug(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
           }
 
           on_close = ->(event) {
             ws = event.current_target
-            Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
+            Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}, #{ws.uuid}" }
             # websocket被关闭，重连
 
             # 注意，on_close、on_open、on_error、on_message事件触发后的任务都被追加到EM.reactor_thread中运行，
@@ -54,17 +61,6 @@ module HuobiApi
             # 为了避免可能的阻塞，直接在新线程中运行ws_reconnect任务
             Thread.new do
               ws_reconnect.call(ws) unless ws.force_close_flag # or EM.respond_to?(:exiting)
-            end
-          }
-
-          on_error = ->(event) {
-            ws = event.current_target
-            Log.debug(self.class) { "ws #{type} connection error(#{ws.url}), #{event.message}" }
-            # 创建websocket连接出错，重连
-
-            # 使用新线程执行ws_reconnect的原因同上
-            Thread.new do
-              ws_reconnect.call(ws) unless ws.force_close_flag #or EM.respond_to?(:exiting)
             end
           }
 
@@ -113,16 +109,18 @@ module HuobiApi
             cbs = ws_event_handlers(type)
 
             ws = WebSocket.new_ws(old_ws.url, **cbs)
+            ws.reqs = old_ws.reqs
+            ws.req = old_ws.req
+            p [ws.uuid, old_ws.uuid]
 
             ws.wait_opened do
               if type == 'sub'
-                ws.reqs = old_ws.reqs
                 ws.reqs.each { |req| ws.send(req) }
                 pool.push(ws)
               elsif type == 'req'
-                ws.req = old_ws.req
                 if ws.req # 如果ws上有请求，说明是正在请求中断开，应重发请求，接收数据后将自动放入连接池
                   ws.send(ws.req)
+                  Log.debug(self.class) { "send failed req when reconnect: #{ws.req}" }
                 else
                   # 如果ws上没有请求，说明该ws处于空闲时断开，直接放进连接池
                   pool.push(ws)
@@ -144,10 +142,31 @@ module HuobiApi
         def initialize(pool_size = 32, url = nil)
           super()
 
-          url = url || (WS_URLS[1] + '/ws')
+          url = url || (WS_URLS[2] + '/ws')
           # ws连接池，池中的ws连接均已经处于open状态
           # 用于一次性请求，每次从池中pop取出一个ws连接，请求完一次后放回池中
           create_ws_pool(pool_size, url, 'req').wait_pool_init
+        end
+
+        class << self
+          private def distance(type)
+                  case type
+                  when '1min' then
+                    60 # 60
+                  when '5min' then
+                    300 # 5 * 60
+                  when '15min' then
+                    900 # 15 * 60
+                  when '30min' then
+                    1800 # 30 * 60
+                  when '60min' then
+                    3600 # 60 * 60
+                  when '1day' then
+                    86400 # 24 * 60 * 60
+                  when '1week' then
+                    604800 # 7 * 24 * 60 * 60
+                  end
+          end
         end
 
         # 1.默认情况下，指定to不指定from时，从to向前获取300根K线
@@ -159,7 +178,7 @@ module HuobiApi
         # 对于某类型K线起始时间点t1和下一根K线起始时间点t2来说：
         #    - from == t1时，从t1开始请求，from > t1 时，从t2开始请求
         #    - t2 > to >= t1时，将获取到t1为止(包含t1)
-        def gen_req(symbol, type, from: nil, to: nil)
+        def self.gen_req(symbol, type, from: nil, to: nil)
           valid_types = %w[1min 5min 15min 30min 60min 1day 1week]
           unless valid_types.include?(type)
             raise ArgumentError, " invalid type: #{type}, valid types: #{valid_types}"
@@ -190,18 +209,35 @@ module HuobiApi
                       req: "market.#{symbol}.kline.#{type}",
                       id: symbol,
                       from: from < 1501174800 ? 1501174800 : from,
-                      to: to > 2556115200 ? 2556115200 : to
+                      to: (to > (tmp = Time.now.to_i + distance(type))) ? tmp : to
                     })
         end
 
+        def gen_req(...)
+          self.class.gen_req(...)
+        end
+
         # 获取币的K线起始时间点(多数情况下也即该币上线交易的时间点)
-        def kline_start_at(symbol)
+        # 获取到的时间将以'btcusdt: 1212121212'格式写入文件kline_start_time.txt
+        def self.kline_start_at(symbol)
+          # 先从文件中查询
+          path = File.absolute_path(__dir__) + "/" + 'kline_start_time.txt'
+          if File.exist?(path)
+            File.readlines(path, chomp: true).each do |line|
+              t = line[/^#{symbol}: \K.*/]
+              return t.to_i if t
+            end
+          end
+
           tmp_data = []
           cnt = 900 # 每次获取900根K线
 
           # 新建一个临时ws
           cbs = {
-            on_open: ->(_event) { Log.debug(self.class) { "ws connected" } },
+            on_open: ->(event) {
+              ws = event.current_target
+              Log.debug(self.class) { "ws connected：#{ws.url}" }
+            },
             on_close: ->(_event) { Log.debug(self.class) { "ws closed" } },
             on_error: ->(_event) {},
             on_message: ->(event) {
@@ -261,20 +297,26 @@ module HuobiApi
           week_epoch = find_week.call
           start_time = find_min.call(week_epoch)
           ws.close
+
+          # 将结果写入文件保存下来
+          File.open(path, 'a') do |f|
+            f.puts "#{symbol}: #{start_time}"
+          end
+
           start_time
         end
 
         # 查找一个或多个币的K线起始时间点
         # @param symbols 数组
         # @return {btcusdt: 12121212, ethusdt: 213232323,...}
-        def klines_start_at(symbols)
+        def self.klines_start_at(symbols)
           times = {}
 
           # 最大并发64个查询
           symbols.each_slice(64).each do |some_coins|
-            Async do |task|
+            Async(annotation: 'klines_start_at: control concurrent count') do |task|
               some_coins.each do |symbol|
-                Async do |subtask|
+                Async(annotation: 'call kline_start_at') do |subtask|
                   times[symbol] = kline_start_at(symbol)
                 end
               end
@@ -286,14 +328,18 @@ module HuobiApi
 
         # 生成某币某个K线类型的所有请求(从最早的第一根K线到目前为止，每个请求获取900根K线)
         # @param type '1min', '5min', '15min', '30min', '60min', '1day', '1week'
-        def gen_coin_all_reqs(symbol, type)
+        def self.gen_coin_all_reqs(symbol, type, from: nil)
           cnt = 900
-          start_time = kline_start_at(symbol)
+          start_time = from || kline_start_at(symbol)
           (start_time..Time.now.to_i)
             .step(cnt * distance(type))
             .map do |from|
             gen_req(symbol, type, from: from)
           end
+        end
+
+        def gen_coin_all_reqs(...)
+          self.class.gen_coin_all_reqs(...)
         end
 
         def req_coins_kline(coins, type, from: nil, to: nil)
@@ -313,15 +359,16 @@ module HuobiApi
 
         def req_klines_by_reqs(reqs)
           while (req = reqs.shift)
-            ws = ws_pool.shift!
-            send_req(ws, req)
+            ws_pool.shift! do |ws|
+              send_req(ws, req)
+            end
           end
         end
 
         # 发送给定的请求
         private def send_req(ws, req)
           ws.send(req)
-          ws.reqs.push(req)
+          ws.req = req
         end
 
         # 请求一次性请求K线数据
@@ -329,25 +376,6 @@ module HuobiApi
           req = gen_req(symbol, type, from: from, to: to)
           ws.send(req)
           ws.req = req
-        end
-
-        private def distance(type)
-          case type
-          when '1min' then
-            60 # 60
-          when '5min' then
-            300 # 5 * 60
-          when '15min' then
-            900 # 15 * 60
-          when '30min' then
-            1800 # 30 * 60
-          when '60min' then
-            3600 # 60 * 60
-          when '1day' then
-            86400 # 24 * 60 * 60
-          when '1week' then
-            604800 # 7 * 24 * 60 * 60
-          end
         end
       end
 
