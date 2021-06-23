@@ -358,7 +358,7 @@ module HuobiApi
         end
 
         def req_klines_by_reqs(reqs)
-          while (req = reqs.shift)
+          reqs.each do |req|
             ws_pool.shift! do |ws|
               send_req(ws, req)
             end
