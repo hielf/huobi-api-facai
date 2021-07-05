@@ -4,6 +4,16 @@ module HuobiApi
   module Log
     class << self
       attr_reader :log
+
+      def method_missing(name, *args, &block)
+        if %i(debug info warn error fatal).include? name
+          self.new unless log
+          log.send(name, *args, &block)
+        else
+          super(name, *args, &block)
+        end
+
+      end
     end
 
     def self.new
@@ -18,30 +28,30 @@ module HuobiApi
       log
     end
 
-    def self.debug(...)
-      self.new unless log
-      log.debug(...)
-    end
-
-    def self.info(...)
-      self.new unless log
-      log.info(...)
-    end
-
-    def self.warn(...)
-      self.new unless log
-      log.warn(...)
-    end
-
-    def self.error(...)
-      self.new unless log
-      log.error(...)
-    end
-
-    def self.fatal(...)
-      self.new unless log
-      log.fatal(...)
-    end
+    # def self.debug(...)
+    #   self.new unless log
+    #   log.debug(...)
+    # end
+    #
+    # def self.info(...)
+    #   self.new unless log
+    #   log.info(...)
+    # end
+    #
+    # def self.warn(...)
+    #   self.new unless log
+    #   log.warn(...)
+    # end
+    #
+    # def self.error(...)
+    #   self.new unless log
+    #   log.error(...)
+    # end
+    #
+    # def self.fatal(...)
+    #   self.new unless log
+    #   log.fatal(...)
+    # end
   end
 end
 

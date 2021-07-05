@@ -34,7 +34,7 @@ module HuobiApi
 
         def sub_channel(ws, symbol)
           sub_req = { action: 'sub', ch: "orders##{symbol}" }
-          ws.send(JSON.dump(sub_req))
+          ws.send(MultiJson.dump(sub_req))
           ws.tracker_reqs[symbol.to_sym] = sub_req
           ws
         end
@@ -144,7 +144,7 @@ module HuobiApi
 
         def on_message(event)
           ws = event.current_target
-          msg = JSON.parse(event.data, symbolize_names: true)
+          msg = MultiJson.load(event.data, symbolize_keys: true)
 
           case msg
           in { action: "push", ch: /orders#.*usdt/, data: }
@@ -160,7 +160,7 @@ module HuobiApi
 
             # puts "#{order_id}: #{data}"
           in { action: "ping", data: { ts: } }
-            pong_msg = JSON.dump({ action: 'pong', data: { ts: ts } })
+            pong_msg = MultiJson.dump({ action: 'pong', data: { ts: ts } })
             ws.send(pong_msg)
           in { ch: "auth", code: }
             # 认证响应的信息

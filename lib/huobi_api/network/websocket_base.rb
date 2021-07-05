@@ -1,5 +1,7 @@
 require 'faye/websocket'
+require 'oj'
 require 'json'
+require 'multi_json'
 require 'securerandom'
 require 'async'
 
@@ -79,14 +81,21 @@ module HuobiApi
         # 需给定语句块，在等待完成后会被执行
         def wait_opened
           t = Async(annotation: 'wait ws opened') do |subtask|
-            n = 0
+            n = 1
             until opened? or closed?
               subtask.sleep 0.05
               n += 1
-              p ["wait ws open: (state: #{ready_state}/#{Faye::WebSocket::OPEN}), #{uuid}", req] if n % 100 == 0
+
+              if n % 100 == 0
+                Log.debug(self.class) {"wait ws open: (state: #{ready_state}/#{Faye::WebSocket::OPEN}), #{uuid}, #{req}"}
+              end
+              self.close if n % 400 == 0  # 如果等待20秒后还在等待，关掉连接
             end
 
-            (p 'closed............................';next) if closed?
+            if closed?
+              Log.debug(self.class) {"un-opened ws closed: #{uuid}, #{req}"}
+              next
+            end
             next yield self if block_given?
             self
           end

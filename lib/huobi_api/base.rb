@@ -5,15 +5,32 @@ module HuobiApi
   class << self
     attr_accessor :proxy, :access_key, :secret_key, :log_file, :log_level
     attr_reader :proxy_addr, :proxy_port
-  end
 
-  def self.proxy=(url)
-    url = 'http://' + url unless url.start_with?('http://', 'https://', 'socks5://')
-    @proxy = url
+    def access_key
+      @access_key ||= ENV['HUOBI_ACCESS_KEY']
+      raise 'ACCESS KEY is required, set the environment variable "HUOBI_ACCESS_KEY"' if @access_key.nil?
 
-    uri = URI(url)
-    @proxy_addr = uri.host
-    @proxy_port = uri.port
+      @access_key
+    end
+
+    def secret_key
+      @secret_key ||= ENV['HUOBI_SECRET_KEY']
+      raise 'SECRET KEY is required, set the environment variable "HUOBI_SECRET_KEY"' if @secret_key.nil?
+
+      @secret_key
+    end
+
+    def proxy
+      @proxy || ENV['http_proxy'] || ENV['HTTP_PROXY']
+    end
+
+    def proxy_addr
+      @proxy_addr = URI(proxy)&.host
+    end
+
+    def proxy_port
+      @proxy_port = URI(proxy)&.port
+    end
   end
 
   def self.log_level=(level)

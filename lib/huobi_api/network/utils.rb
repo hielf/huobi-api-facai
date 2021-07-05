@@ -48,7 +48,7 @@ module HuobiApi
         }
         sign_data = "GET\n#{host}\n/ws/v2\n#{build_query(hash_sort(params))}"
         params = params.merge({ 'signature' => sign(sign_data), 'authType' => 'api' })
-        JSON.dump({ action: 'req', ch: 'auth', params: params })
+        MultiJson.dump({ action: 'req', ch: 'auth', params: params })
       end
     end
   end

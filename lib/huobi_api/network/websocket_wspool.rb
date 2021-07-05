@@ -65,10 +65,11 @@ module HuobiApi
           t = Async(annotation: 'shift!') do |task|
             n = 0
             while empty?
-              task.sleep 0.01
+              task.sleep 0.05
               n += 1
-              p "ws pool is empty" if n % 500 == 0
+              (p "ws pool is empty") if n % 500 == 0
             end
+
             next yield shift if block_given?
             shift
           end

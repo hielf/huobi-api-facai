@@ -1,4 +1,5 @@
-require 'json'
+require 'oj'
+require 'multi_json'
 require 'uri'
 require 'net/http'
 require 'logger'
@@ -9,6 +10,7 @@ require_relative './utils'
 require_relative './network_url'
 
 HttpLog.configure do |config|
+  config.enabled = false
   config.url_blacklist_pattern = '/v1/common/symbols'
 end
 
@@ -61,7 +63,7 @@ module HuobiApi
         begin
           # get请求只需要第二个参数，参数都已经放入了url中
           # post请求才需要第三个参数，参数都在req_data中
-          res = JSON.parse http.send_request(method, url, JSON.dump(req_data), headers).body
+          res = MultiJson.load http.send_request(method, url, MultiJson.dump(req_data), headers).body
           res
         rescue StandardError => e
           { 'message' => 'rest http request error', 'request_error' => e.message, 'url' => url }

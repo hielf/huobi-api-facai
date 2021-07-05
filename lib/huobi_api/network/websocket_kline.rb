@@ -53,7 +53,7 @@ module HuobiApi
 
           on_close = ->(event) {
             ws = event.current_target
-            Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}, #{ws.uuid}" }
+            Log.debug(self.class) { "ws #{type} connection closed(#{ws.url}), #{event.reason}" }
             # websocket被关闭，重连
 
             # 注意，on_close、on_open、on_error、on_message事件触发后的任务都被追加到EM.reactor_thread中运行，
@@ -67,11 +67,11 @@ module HuobiApi
           on_message = ->(event) {
             ws = event.current_target
             blob_arr = event.data
-            data = JSON.parse(Zlib::gunzip(blob_arr.pack('c*')), symbolize_names: true)
+            data = MultiJson.load(Zlib::gunzip(blob_arr.pack('c*')), symbolize_keys: true)
 
             case data
             in { ping: ts }
-              ws.opened? && ws.send(JSON.dump({ "pong": ts }))
+              ws.opened? && ws.send(MultiJson.dump({ "pong": ts }))
             in { ch: _, tick: _ } # 有tick字段，说明是订阅后推送的实时K线数据
               # handle_realtime_data(data)
               @queue.push(data)
@@ -111,7 +111,6 @@ module HuobiApi
             ws = WebSocket.new_ws(old_ws.url, **cbs)
             ws.reqs = old_ws.reqs
             ws.req = old_ws.req
-            p [ws.uuid, old_ws.uuid]
 
             ws.wait_opened do
               if type == 'sub'
@@ -150,196 +149,95 @@ module HuobiApi
 
         class << self
           private def distance(type)
-                  case type
-                  when '1min' then
-                    60 # 60
-                  when '5min' then
-                    300 # 5 * 60
-                  when '15min' then
-                    900 # 15 * 60
-                  when '30min' then
-                    1800 # 30 * 60
-                  when '60min' then
-                    3600 # 60 * 60
-                  when '1day' then
-                    86400 # 24 * 60 * 60
-                  when '1week' then
-                    604800 # 7 * 24 * 60 * 60
-                  end
-          end
-        end
-
-        # 1.默认情况下，指定to不指定from时，从to向前获取300根K线
-        # 2.默认情况下，指定from不指定to时，获取最近的300根K线，等价于from未生效
-        # 3.默认情况下，不指定from和to时，获取最近的300根K线
-        # 官方说明一次性最多只能获取300根K线，但实际上可以获取更多，比如600根、900根
-        # 本方法对默认行为做了改变，总是会补齐from和to，效果是：
-        #       在没有同时指定from和to时，默认生成可获取900根K线的req
-        # 对于某类型K线起始时间点t1和下一根K线起始时间点t2来说：
-        #    - from == t1时，从t1开始请求，from > t1 时，从t2开始请求
-        #    - t2 > to >= t1时，将获取到t1为止(包含t1)
-        def self.gen_req(symbol, type, from: nil, to: nil)
-          valid_types = %w[1min 5min 15min 30min 60min 1day 1week]
-          unless valid_types.include?(type)
-            raise ArgumentError, " invalid type: #{type}, valid types: #{valid_types}"
+            case type
+            when '1min', '5min', '15min', '30min', '60min'
+              60 * type.to_i
+            when '1day'
+              86400 # 24 * 60 * 60
+            when '1week'
+              604800 # 7 * 24 * 60 * 60
+            else
+              raise ArgumentError, 'invalid type'
+            end
           end
 
-          # 如果只有 to 没有 from，手动补齐from(获取最多900根K线)
-          # 注：
-          #   - 如果to是K线起始点， 直接 to - N * distance(type) 会获得N+1根K线
-          #   - 如果to不是K线起始点，直接 to - N * distance(type) 会获得N根K线
-          # 如果只有 from 没有 to，手动补齐to(获取最多900根K线)
-          # 注：
-          #   - 如果from是K线起始点，直接 from + N * distance(type) 会获得N+1根K线
-          #   - 如果from不是K线起始点，直接 from + N * distance(type) 会获得N根K线
-          # 如果既没有from，也没有to，则手动补齐获取最近的900根K线
-          case [from, to]
-          in [nil, nil | Integer]
-            to = (to.nil? ? Time.now.to_i : to)
-            from = to - (to % distance(type) == 0 ? 899 : 900) * distance(type)
-          in [Integer, nil]
-            to = from + (from % distance(type) == 0 ? 899 : 900) * distance(type)
-          in [Integer, Integer]
-          else
-            raise ArgumentError, "invalid time range: #{[from, to]}"
+          # 给定一个epoch，将其对其到K对应K线类型的起始时间点
+          # 例如，对于15分钟K线，10:25:10对应的epoch将被对齐为10:15:00的epoch
+          private def kline_epoch_align(type, epoch)
+            case type
+            when '1min', '5min', '15min', '30min', '60min'
+              epoch - (epoch % distance(type))
+            when '1day'
+              Time.at(epoch).to_date.to_time.to_i
+            when '1week'
+              # Huobi的周K线起点是星期日，星期日的wday=0
+              (Time.at(epoch).to_date - Time.at(epoch).wday).to_time.to_i
+            else
+              raise ArgumentError, 'invalid type'
+            end
           end
 
-          # 官方给定的from和to的范围：[1501174800, 2556115200]
-          JSON.dump({
-                      req: "market.#{symbol}.kline.#{type}",
-                      id: symbol,
-                      from: from < 1501174800 ? 1501174800 : from,
-                      to: (to > (tmp = Time.now.to_i + distance(type))) ? tmp : to
-                    })
+          private def kline_epoch_align?(type, epoch)
+            case type
+            when '1min', '5min', '15min', '30min', '60min'
+              epoch % distance(type) == 0
+            when '1day'
+              Time.at(epoch).to_date.to_time.to_i == epoch
+            when '1week'
+              # Huobi的周K线起点是星期日，星期日的wday=0
+              Time.at(epoch).wday == 0 and Time.at(epoch).to_date.to_time.to_i == epoch
+            else
+              raise ArgumentError, 'invalid type'
+            end
+          end
+
+          # 1.默认情况下，指定to不指定from时，从to向前获取300根K线
+          # 2.默认情况下，指定from不指定to时，获取最近的300根K线，等价于from未生效
+          # 3.默认情况下，不指定from和to时，获取最近的300根K线
+          # 官方说明一次性最多只能获取300根K线，但实际上可以获取更多，比如600根、900根
+          # 本方法对默认行为做了改变，总是会补齐from和to，效果是：
+          #       在没有同时指定from和to时，默认生成可获取900根K线的req
+          # 对于某类型K线起始时间点t1和下一根K线起始时间点t2来说：
+          #    - from == t1时，从t1开始请求，from > t1 时，从t2开始请求
+          #    - t2 > to >= t1时，将获取到t1为止(包含t1)
+          def gen_req(symbol, type, from: nil, to: nil)
+            valid_types = %w[1min 5min 15min 30min 60min 1day 1week]
+            unless valid_types.include?(type)
+              raise ArgumentError, " invalid type: #{type}, valid types: #{valid_types}"
+            end
+
+            # 如果只有 to 没有 from，手动补齐from(获取最多900根K线)
+            # 注：
+            #   - 如果to是K线起始点， 直接 to - N * distance(type) 会获得N+1根K线
+            #   - 如果to不是K线起始点，直接 to - N * distance(type) 会获得N根K线
+            # 如果只有 from 没有 to，手动补齐to(获取最多900根K线)
+            # 注：
+            #   - 如果from是K线起始点，直接 from + N * distance(type) 会获得N+1根K线
+            #   - 如果from不是K线起始点，直接 from + N * distance(type) 会获得N根K线
+            # 如果既没有from，也没有to，则手动补齐获取最近的900根K线
+            case [from, to]
+            in [nil, nil | Integer]
+              to = (to.nil? ? Time.now.to_i : to)
+              from = to - (kline_epoch_align?(type, to) ? 899 : 900) * distance(type)
+            in [Integer, nil]
+              to = from + (kline_epoch_align?(type, from) ? 899 : 900) * distance(type)
+            in [Integer, Integer]
+            else
+              raise ArgumentError, "invalid time range: #{[from, to]}"
+            end
+
+            # 官方给定的from和to的范围：[1501174800, 2556115200]
+            MultiJson.dump({
+                             req: "market.#{symbol}.kline.#{type}",
+                             id: symbol,
+                             from: from < 1501174800 ? 1501174800 : from,
+                             to: (to > (tmp = Time.now.to_i + distance(type))) ? tmp : to
+                           })
+          end
         end
 
         def gen_req(...)
           self.class.gen_req(...)
-        end
-
-        # 获取币的K线起始时间点(多数情况下也即该币上线交易的时间点)
-        # 获取到的时间将以'btcusdt: 1212121212'格式写入文件kline_start_time.txt
-        def self.kline_start_at(symbol)
-          # 先从文件中查询
-          path = File.absolute_path(__dir__) + "/" + 'kline_start_time.txt'
-          if File.exist?(path)
-            File.readlines(path, chomp: true).each do |line|
-              t = line[/^#{symbol}: \K.*/]
-              return t.to_i if t
-            end
-          end
-
-          tmp_data = []
-          cnt = 900 # 每次获取900根K线
-
-          # 新建一个临时ws
-          cbs = {
-            on_open: ->(event) {
-              ws = event.current_target
-              Log.debug(self.class) { "ws connected：#{ws.url}" }
-            },
-            on_close: ->(_event) { Log.debug(self.class) { "ws closed" } },
-            on_error: ->(_event) {},
-            on_message: ->(event) {
-              ws = event.current_target
-              blob_arr = event.data
-              data = JSON.parse(Zlib::gunzip(blob_arr.pack('c*')), symbolize_names: true)
-
-              case data
-              in { ping: ts }
-                ws.opened? && ws.send(JSON.dump({ "pong": ts }))
-              in { id:, rep:, status: 'ok', data: Array }
-                tmp_data << data
-              else
-                Log.debug(self.class) { "other msgs: #{data}" }
-              end
-            }
-          }
-          url = WS_URLS[0] + '/ws'
-          ws = WebSocket.new_ws(url, **cbs).wait_opened
-
-          get_res = ->(req) {
-            ws.send(req)
-
-            Async do |subtask|
-              subtask.sleep 0.05 until tmp_data.any?
-              tmp_data.shift[:data]
-            end.wait
-          }
-
-          # 找到从哪一周开始(为了防止起始周前面还有K线数据，找到的起始周-1)
-          find_week = ->(to = Time.now.to_i) {
-            req = gen_req(symbol, '1week', to: to)
-            data = get_res.call(req)
-            if data.size < cnt
-              data[0][:id] - distance('1week')
-            elsif data.size == cnt
-              to = data[0][:id] - 1
-              find_week.call(to = to)
-            end
-          }
-
-          # 找到起始周后，从起始周开始找到起始时间点
-          find_min = ->(from) {
-            req = gen_req(symbol, '30min', from: from)
-            data = get_res.call(req)
-            if data.empty?
-              from += cnt * distance('30min')
-              find_min.call(from)
-            elsif data.size < cnt
-              data[0][:id]
-            elsif data.size == cnt
-              from = data[-1][:id] + 1
-              find_min.call(from)
-            end
-          }
-
-          week_epoch = find_week.call
-          start_time = find_min.call(week_epoch)
-          ws.close
-
-          # 将结果写入文件保存下来
-          File.open(path, 'a') do |f|
-            f.puts "#{symbol}: #{start_time}"
-          end
-
-          start_time
-        end
-
-        # 查找一个或多个币的K线起始时间点
-        # @param symbols 数组
-        # @return {btcusdt: 12121212, ethusdt: 213232323,...}
-        def self.klines_start_at(symbols)
-          times = {}
-
-          # 最大并发64个查询
-          symbols.each_slice(64).each do |some_coins|
-            Async(annotation: 'klines_start_at: control concurrent count') do |task|
-              some_coins.each do |symbol|
-                Async(annotation: 'call kline_start_at') do |subtask|
-                  times[symbol] = kline_start_at(symbol)
-                end
-              end
-            end
-          end
-
-          times
-        end
-
-        # 生成某币某个K线类型的所有请求(从最早的第一根K线到目前为止，每个请求获取900根K线)
-        # @param type '1min', '5min', '15min', '30min', '60min', '1day', '1week'
-        def self.gen_coin_all_reqs(symbol, type, from: nil)
-          cnt = 900
-          start_time = from || kline_start_at(symbol)
-          (start_time..Time.now.to_i)
-            .step(cnt * distance(type))
-            .map do |from|
-            gen_req(symbol, type, from: from)
-          end
-        end
-
-        def gen_coin_all_reqs(...)
-          self.class.gen_coin_all_reqs(...)
         end
 
         def req_coins_kline(coins, type, from: nil, to: nil)
@@ -389,7 +287,7 @@ module HuobiApi
         end
 
         def gen_req(symbol)
-          JSON.dump({ sub: "market.#{symbol}.kline.1min", id: symbol })
+          MultiJson.dump({ sub: "market.#{symbol}.kline.1min", id: symbol })
         end
 
         # 检查某币是否订阅了实时K线数据
