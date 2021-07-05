@@ -283,7 +283,7 @@ module HuobiApi
 
           # ws连接池，池中的ws连接均已经处于open状态
           # 用于订阅实时K线数据，每个ws连接订阅一部分币的实时K线，无需从池中pop
-          create_ws_pool(20, WS_URLS[3] + '/ws', 'sub').wait_pool_init
+          create_ws_pool(20, WS_URLS[2] + '/ws', 'sub').wait_pool_init
         end
 
         def gen_req(symbol)
