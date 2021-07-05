@@ -10,7 +10,7 @@ require_relative './utils'
 require_relative './network_url'
 
 HttpLog.configure do |config|
-  config.enabled = false
+  # config.enabled = false
   config.url_blacklist_pattern = '/v1/common/symbols'
 end
 

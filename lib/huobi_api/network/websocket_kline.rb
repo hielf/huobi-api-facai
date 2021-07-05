@@ -141,7 +141,7 @@ module HuobiApi
         def initialize(pool_size = 32, url = nil)
           super()
 
-          url = url || (WS_URLS[2] + '/ws')
+          url = url || (WS_URLS[1] + '/ws')
           # ws连接池，池中的ws连接均已经处于open状态
           # 用于一次性请求，每次从池中pop取出一个ws连接，请求完一次后放回池中
           create_ws_pool(pool_size, url, 'req').wait_pool_init
