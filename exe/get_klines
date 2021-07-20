@@ -104,7 +104,8 @@ module HuobiApi
             "60min" => epoch_60min,
             "30min" => epoch_30min,
             "15min" => epoch_15min,
-            "5min" => epoch_5min
+            "5min" => epoch_5min,
+            "1min" => epoch_5min,
           }
           ws.close
 
@@ -140,6 +141,7 @@ module HuobiApi
         def self.gen_coin_all_reqs(symbol, type, from: nil)
           cnt = 900
           start_time = (from || kline_start_at(symbol)[type])
+          p start_time
           # start_time = (from || kline_epoch_align(type, kline_start_at(symbol)[type]))
 
           (start_time..Time.now.to_i)
