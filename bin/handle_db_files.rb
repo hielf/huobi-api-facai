@@ -49,11 +49,11 @@ def distance(type)
 end
 
 # 添加最新epoch
-def update_meta_max_epoch(pattern = nil)
+def update_meta_max_key(pattern = nil)
   run(pattern) do |db, symbol, type|
-     next if db["max_epoch"]
-     max_epoch = db.max_by {|x, _| x.to_i}
-     db["max_epoch"] = max_epoch[0]
+     next if db["max_key"]
+     max_key = db.max_by {|x, _| x.to_i}
+     db["max_key"] = max_key[0]
   end
 end
 
@@ -75,10 +75,10 @@ def find_invalid_keys(pattern = nil)
 
     keys = keys.map(&:to_i).sort
 
-    max_epoch = MultiJson.load(db['max_epoch'] || '0').to_i
+    max_key = MultiJson.load(db['max_key'] || '0').to_i
 
-    if keys[-1] != max_epoch
-      p [symbol, type, {max_epoch: max_epoch, max_key:  keys[-1]}]
+    if keys[-1] != max_key
+      p [symbol, type, {max_key: max_key, max_key:  keys[-1]}]
       next
     end
 
@@ -90,7 +90,7 @@ end
 
 def validate_size(filename)
   run_one(filename) do |db, symbol, type|
-    keys = JSON.parse(db['keys']) - [db['max_epoch'].to_i]
+    keys = JSON.parse(db['keys']) - [db['max_key'].to_i]
     keys.each do |key|
       size = JSON.parse(db[key.to_s]).size
       p [symbol, type, key, size] if size != 900

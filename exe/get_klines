@@ -141,7 +141,6 @@ module HuobiApi
         def self.gen_coin_all_reqs(symbol, type, from: nil)
           cnt = 900
           start_time = (from || kline_start_at(symbol)[type])
-          p start_time
           # start_time = (from || kline_epoch_align(type, kline_start_at(symbol)[type]))
 
           (start_time..Time.now.to_i)
@@ -243,9 +242,7 @@ class KlinesDB
       yield data
     end
 
-    def close
-      db.close
-    end
+    def close = db.close
 
     private def distance(type)
       case type
@@ -305,7 +302,7 @@ class KlinesDB
       from = nil
       latest = nil # 最后一组K线的最后一根K线
       DB.open(symbol, type, 'r') do |db|
-        from = db["max_epoch"] # 获取目前最大的key
+        from = db["max_key"] # 获取目前最大的key
         latest = from.nil? ? nil : db[from][-1][:id]
         # p [symbol, type, from, latest, Time.now.strftime("%F %T.%3N")]
       end
@@ -327,14 +324,21 @@ class KlinesDB
         end
 
         DB.open(symbol, type) do |db|
-          klines[key].each do |start_epoch, data|
+          klines[key].keys
+                     .sort
+                     .each do |start_epoch|
+            # klines[key].each do |start_epoch, data|
+            data = klines[key][start_epoch]
             # 避免所有循环长时间占用CPU，主动放弃本次执行机会，每次循环单独等待被调度
             subtask.yield
 
             # 保存数据(epoch和对应K线)
             db.save(start_epoch, data)
             # 保存当前所有已保存的最新key
-            db["max_epoch"] = start_epoch if start_epoch > db["max_epoch"].to_i
+            p [symbol, data[-1][:id]]
+            db.save('max_epoch', data[-1][:id])
+            # db['max_epoch'] = data[-1][:id]
+            db["max_key"] = start_epoch if start_epoch > db["max_key"].to_i
             db['keys'] = (db['keys'] || []).push(start_epoch).uniq
 
             klines[key].delete start_epoch
@@ -488,7 +492,7 @@ def main
     if symbols[0] == 'all'
       symbols = HuobiApi::Coins.all_symbols
     else
-      symbols = symbols.map {|x| x.end_with?("usdt") ? x : x + "usdt"}
+      symbols = symbols.map { |x| x.end_with?("usdt") ? x : x + "usdt" }
       symbols = symbols & HuobiApi::Coins.all_symbols
     end
     KlinesDB.fetch_klines(symbols, options[:type])
