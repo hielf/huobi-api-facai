@@ -12,5 +12,7 @@ gem 'faye-websocket'
 gem 'httplog'
 gem 'pry'
 gem 'async'
+gem 'async-io'
 gem 'oj'
 gem 'multi_json'
+

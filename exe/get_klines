@@ -327,23 +327,22 @@ class KlinesDB
           klines[key].keys
                      .sort
                      .each do |start_epoch|
-            # klines[key].each do |start_epoch, data|
-            data = klines[key][start_epoch]
-            # 避免所有循环长时间占用CPU，主动放弃本次执行机会，每次循环单独等待被调度
-            subtask.yield
+                        # klines[key].each do |start_epoch, data|
+                        data = klines[key][start_epoch]
+                        # 避免所有循环长时间占用CPU，主动放弃本次执行机会，每次循环单独等待被调度
+                        subtask.yield
 
-            # 保存数据(epoch和对应K线)
-            db.save(start_epoch, data)
-            # 保存当前所有已保存的最新key
-            p [symbol, data[-1][:id]]
-            db.save('max_epoch', data[-1][:id])
-            # db['max_epoch'] = data[-1][:id]
-            db["max_key"] = start_epoch if start_epoch > db["max_key"].to_i
-            db['keys'] = (db['keys'] || []).push(start_epoch).uniq
+                        # 保存数据(epoch和对应K线)
+                        db.save(start_epoch, data)
+                        # 保存当前所有已保存的最新key
+                        db.save('max_epoch', data[-1][:id])
+                        # db['max_epoch'] = data[-1][:id]
+                        db["max_key"] = start_epoch if start_epoch > db["max_key"].to_i
+                        db['keys'] = (db['keys'] || []).push(start_epoch).uniq
 
-            klines[key].delete start_epoch
-            puts "fetched: [#{symbol}, #{type}, #{start_epoch}, #{data.size}]"
-          end
+                        klines[key].delete start_epoch
+                        puts "fetched: [#{symbol}, #{type}, #{start_epoch}, #{data.size}]"
+                      end
         end
       end
     }
