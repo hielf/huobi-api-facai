@@ -19,12 +19,13 @@ module HuobiApi
       # Thread.pass until EventMachine.reactor_running?
       unless EM.reactor_running?
         Thread.new do
-          EM.run do
-            # EM.add_shutdown_hook do
-            #   # 定义一个EM退出时的标记
-            #   def EM.exiting = true
-            # end
-          end
+          # EM.run do
+          #   # EM.add_shutdown_hook do
+          #   #   # 定义一个EM退出时的标记
+          #   #   def EM.exiting = true
+          #   # end
+          # end
+          EM.run
         end
       end
       Thread.pass until EM.reactor_running?

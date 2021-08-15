@@ -93,6 +93,13 @@ module HuobiApi
               #   :"err-msg"=>"429 too many request topic is market.nestusdt.kline.5min"
               # }
               Log.error(self.class) { "error msgs: #{data}" }
+              # 如果是请求错误，重发请求
+              if data[:"err-msg"].start_with?("429 too many request topic")
+                if ws.opened? && ws.req
+                  Log.error(self.class) { "re-send failed req: #{ws.req}" }
+                  ws.send(ws.req)
+                end
+              end
             else
               Log.info(self.class) { "other msgs: #{data}" }
             end
@@ -138,15 +145,6 @@ module HuobiApi
       end
 
       class ReqKLine < BaseKLine
-        def initialize(pool_size = 32, url = nil)
-          super()
-
-          url = url || (WS_URLS[1] + '/ws')
-          # ws连接池，池中的ws连接均已经处于open状态
-          # 用于一次性请求，每次从池中pop取出一个ws连接，请求完一次后放回池中
-          create_ws_pool(pool_size, url, 'req').wait_pool_init
-        end
-
         class << self
           private def distance(type)
             case type
@@ -200,11 +198,13 @@ module HuobiApi
           # 对于某类型K线起始时间点t1和下一根K线起始时间点t2来说：
           #    - from == t1时，从t1开始请求，from > t1 时，从t2开始请求
           #    - t2 > to >= t1时，将获取到t1为止(包含t1)
-          def gen_req(symbol, type, from: nil, to: nil)
+          def gen_req(symbol, type, klines_cnt = 900, from: nil, to: nil)
             valid_types = %w[1min 5min 15min 30min 60min 1day 1week]
             unless valid_types.include?(type)
               raise ArgumentError, " invalid type: #{type}, valid types: #{valid_types}"
             end
+
+            n = klines_cnt
 
             # 如果只有 to 没有 from，手动补齐from(获取最多900根K线)
             # 注：
@@ -218,9 +218,9 @@ module HuobiApi
             case [from, to]
             in [nil, nil | Integer]
               to = (to.nil? ? Time.now.to_i : to)
-              from = to - (kline_epoch_align?(type, to) ? 899 : 900) * distance(type)
+              from = to - (kline_epoch_align?(type, to) ? (n - 1) : n) * distance(type)
             in [Integer, nil]
-              to = from + (kline_epoch_align?(type, from) ? 899 : 900) * distance(type)
+              to = from + (kline_epoch_align?(type, from) ? (n - 1) : n) * distance(type)
             in [Integer, Integer]
             else
               raise ArgumentError, "invalid time range: #{[from, to]}"
@@ -234,13 +234,33 @@ module HuobiApi
                              to: (to > (tmp = Time.now.to_i + distance(type))) ? tmp : to
                            })
           end
+
+          # 请求某些币的最新N根K线数据，并返回ReqKLine实例对象r，
+          # 可通过r.queue获取响应的数据，通过r.ws_pool.close_pool关闭连接池
+          def req_recent_klines(symbols, type, klines_cnt = 50)
+            symbols = Array[*symbols]
+
+            req_kline = self.new(10)
+            req_kline.req_coins_kline(symbols, type, klines_cnt)
+
+            req_kline
+          end
+        end
+
+        def initialize(pool_size = 32, url = nil)
+          super()
+
+          url = url || (WS_URLS[1] + '/ws')
+          # ws连接池，池中的ws连接均已经处于open状态
+          # 用于一次性请求，每次从池中pop取出一个ws连接，请求完一次后放回池中
+          create_ws_pool(pool_size, url, 'req').wait_pool_init
         end
 
         def gen_req(...)
           self.class.gen_req(...)
         end
 
-        def req_coins_kline(coins, type, from: nil, to: nil)
+        def req_coins_kline(coins, type, klines_cnt = 900, from: nil, to: nil)
           coins = Array[*coins]
 
           coins.each do |symbol|
@@ -251,7 +271,7 @@ module HuobiApi
 
             ## block version
             ws = ws_pool.shift!
-            req_kline(ws, symbol, type, from: from, to: to)
+            req_kline(ws, symbol, type, klines_cnt, from: from, to: to)
           end
         end
 
@@ -270,8 +290,8 @@ module HuobiApi
         end
 
         # 请求一次性请求K线数据
-        private def req_kline(ws, symbol, type, from: nil, to: nil)
-          req = gen_req(symbol, type, from: from, to: to)
+        private def req_kline(ws, symbol, type, klines_cnt = 900, from: nil, to: nil)
+          req = gen_req(symbol, type, klines_cnt, from: from, to: to)
           ws.send(req)
           ws.req = req
         end
