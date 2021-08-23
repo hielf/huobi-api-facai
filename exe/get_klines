@@ -327,22 +327,22 @@ class KlinesDB
           klines[key].keys
                      .sort
                      .each do |start_epoch|
-                        # klines[key].each do |start_epoch, data|
-                        data = klines[key][start_epoch]
-                        # 避免所有循环长时间占用CPU，主动放弃本次执行机会，每次循环单独等待被调度
-                        subtask.yield
+            # klines[key].each do |start_epoch, data|
+            data = klines[key][start_epoch]
+            # 避免所有循环长时间占用CPU，主动放弃本次执行机会，每次循环单独等待被调度
+            subtask.yield
 
-                        # 保存数据(epoch和对应K线)
-                        db.save(start_epoch, data)
-                        # 保存当前所有已保存的最新key
-                        db.save('max_epoch', data[-1][:id])
-                        # db['max_epoch'] = data[-1][:id]
-                        db["max_key"] = start_epoch if start_epoch > db["max_key"].to_i
-                        db['keys'] = (db['keys'] || []).push(start_epoch).uniq
+            # 保存数据(epoch和对应K线)
+            db.save(start_epoch, data)
+            # 保存当前所有已保存的最新key
+            db.save('max_epoch', data[-1][:id])
+            # db['max_epoch'] = data[-1][:id]
+            db["max_key"] = start_epoch if start_epoch > db["max_key"].to_i
+            db['keys'] = (db['keys'] || []).push(start_epoch).uniq
 
-                        klines[key].delete start_epoch
-                        puts "fetched: [#{symbol}, #{type}, #{start_epoch}, #{data.size}]"
-                      end
+            klines[key].delete start_epoch
+            puts "fetched: [#{symbol}, #{type}, #{start_epoch}, #{data.size}]"
+          end
         end
       end
     }
@@ -424,29 +424,37 @@ end
 def opt_parse
   options = {}
   parser = OptionParser.new do |opts|
-    opts.banner = "Usage: #{File.basename $0} [options]"
+    opts.banner = "用法描述: #{File.basename $0} [options]"
 
     opts.separator ""
-    opts.separator "Options"
+    opts.separator "选项"
 
-    opts.on('-s symbols', '--symbols symbols', 'which symbols klines to fetch', '("btc,eth,doge")') do |symbols|
+    opts.on('-s symbols', '--symbols symbols', '获取哪些币的K线数据，逗号分隔，或指定all特殊值', '如: "btc,eth,doge"') do |symbols|
       options[:symbols] = symbols.split(',')
     end
 
-    opts.on('-t type', '--type type', 'which type to fetch', '(1min 5min 15min 30min 60min 1day 1week)') do |type|
-      (puts "invalid type", "", opts; exit) unless %w(1min 5min 15min 30min 60min 1day 1week).include? type
+    opts.on('-t type', '--type type', '获取哪种类型的K线数据', '有效值: 1min 5min 15min 30min 60min 1day 1week') do |type|
+      (puts "无效类型", "", opts; exit) unless %w(1min 5min 15min 30min 60min 1day 1week).include? type
       options[:type] = type
     end
 
-    opts.on('--console', 'open console') do
+    opts.on('--sat1m', '等价于"-s all -t 1min"') { options[:symbols] = ['all']; options[:type] = '1min' }
+    opts.on('--sat5m', '等价于"-s all -t 5min"') { options[:symbols] = ['all']; options[:type] = '5min' }
+    opts.on('--sat15m', '等价于"-s all -t 15min"') { options[:symbols] = ['all']; options[:type] = '15min' }
+    opts.on('--sat30m', '等价于"-s all -t 30min"') { options[:symbols] = ['all']; options[:type] = '30min' }
+    opts.on('--sat60m', '等价于"-s all -t 60min"') { options[:symbols] = ['all']; options[:type] = '60min' }
+    opts.on('--sat1d', '等价于"-s all -t 1day"') { options[:symbols] = ['all']; options[:type] = '1day' }
+    opts.on('--sat1w', '等价于"-s all -t 1week"') { options[:symbols] = ['all']; options[:type] = '1week' }
+
+    opts.on('--console', '打开调试终端') do
       options[:console] = true
     end
 
-    opts.on('--debug', "debug mode") do
+    opts.on('--debug', "调试模式") do
       options[:debug] = true
     end
 
-    opts.on('--help', 'print help message') do
+    opts.on('--help', '输出该帮助信息') do
       puts opts
       exit
     end
@@ -455,12 +463,12 @@ def opt_parse
   parser.parse!
 
   if options[:console].nil?
-    (puts "ArgumentsError: missing -s", "", parser; exit) if options[:symbols].nil?
-    (puts "ArgumentsError: missing -t", "", parser; exit) if options[:type].nil?
+    (puts "参数错误: 缺失 -s 选项", "", parser; exit) if options[:symbols].nil?
+    (puts "参数错误: 缺失 -t 选项", "", parser; exit) if options[:type].nil?
   end
 
   if ARGV.any?
-    (puts "extra arguments: #{ARGV}", "", parser; exit)
+    (puts "无效参数: #{ARGV}", "", parser; exit)
   end
 
   options

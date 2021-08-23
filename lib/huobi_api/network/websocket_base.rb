@@ -69,6 +69,11 @@ module HuobiApi
           t.wait
         end
 
+        # CONNECTING: 0
+        # OPEN: 1
+        # CLOSING: 2
+        # CLOSED: 3
+
         # ws已open?
         def opened?
           self.ready_state == Faye::WebSocket::OPEN
