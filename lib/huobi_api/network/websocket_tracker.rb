@@ -107,12 +107,12 @@ module HuobiApi
 
         # 检查是否订阅了某币的订单更新通道
         def subbed?(symbol)
-          self.ws.reqs.any? { |req| req[:ch].split("#")[-1] == symbol }
+          ws && ws.reqs.any? { |req| req[:ch].split("#")[-1] == symbol }
         end
 
         # 检查订阅成功的数量
         def subbed_count
-          self.ws.reqs.size
+          ws && ws.reqs.size
         end
 
         private
@@ -128,13 +128,28 @@ module HuobiApi
         # 为了避免可能的阻塞，直接在新线程中运行ws_reconnect任务
         def on_close(event)
           Log.debug(self.class) { "Tracker connection closed: #{event.reason}" }
+
           # 重建连接，并重新订阅已订阅过的请求
           ws = event.current_target
           reqs = ws.reqs.map { |msg| msg[:ch].split("#")[-1] }
 
+          # 强制关闭连接，不重新订阅
+          if ws.force_close_flag
+            @ws = nil
+            return
+          end
+
+          # 每10秒检查一次订阅情况，只要没订阅成功，就一直订阅，直到订阅成功
+          @ws = nil
           Thread.new do
-            @ws = init_ws(@url)
-            sub_coins_channel(reqs)
+            while true
+              break if @ws and @ws.reqs.size == reqs.size
+
+              @ws&.close!
+              @ws = init_ws(@url)
+              sub_coins_channel(reqs)
+              sleep 30
+            end
           end
         end
 

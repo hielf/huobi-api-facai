@@ -12,6 +12,8 @@ module HuobiApi
           @pool = []
           @cbs = cbs
 
+          @pool_conn_time = Time.now.to_i
+
           # init_ws_pool(pool_size, url, **cbs)
         end
 
@@ -36,11 +38,11 @@ module HuobiApi
           Async(annotation: 'init ws pool') do |task|
             pool_size.times do
               ws = new_ws(url || @url, **(cbs.any? || @cbs))
-              ws.wait_opened do
-                pool.push(ws)
-              end
+              ws.wait_opened { pool.push(ws) }
             end
           end
+
+          close_lose_heartbeat_ws
 
           self
         end
@@ -49,8 +51,32 @@ module HuobiApi
 
         # 关闭连接池
         def close_pool
-          pool.each { |ws| ws.close! }
+          pool.each(&:close!) # { |ws| ws.close! }
           pool.clear
+        end
+
+        # 每隔30分钟关闭所有ws连接并重连
+        def rebuild_ws_pool
+          Thread.new do
+            while true
+              if Time.now.to_i - @pool_conn_time >= 1800
+                puts "rebuild ws pool at #{Time.now}"
+                pool.each(&:close)
+                @pool_conn_time = Time.now.to_i
+              end
+              sleep 30
+            end
+          end
+        end
+
+        def close_lose_heartbeat_ws
+          Thread.new do
+            while true
+              now = Time.now
+              pool.each { |ws| ws.close if now >= ws.last_ping_time + 15 }
+              sleep 1
+            end
+          end
         end
 
         def [](idx) = pool[idx]
@@ -67,7 +93,7 @@ module HuobiApi
             while empty?
               task.sleep 0.05
               n += 1
-              (p "ws pool is empty") if n % 500 == 0
+              (puts "ws pool is empty") if n % 500 == 0
             end
 
             next yield shift if block_given?
@@ -95,6 +121,7 @@ module HuobiApi
         def wait_pool_init
           t = Async(annotation: 'wait ws pool init') do |subtask|
             subtask.sleep 0.05 until pool_size == pool.size
+            @pool_conn_time = Time.now.to_i
 
             next yield self if block_given?
             self

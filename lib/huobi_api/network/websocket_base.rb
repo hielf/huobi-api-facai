@@ -39,6 +39,7 @@ module HuobiApi
         # tracker_reqs: 订阅订单更新通道时使用，每请求订阅一个币，记录该币订阅记录，每订阅成功一个币，删除该币订阅记录
         # error_reqs：订阅订单更新通道时使用，每当订阅某币订单更新失败时，错误请求数+1
         attr_accessor :authed, :uuid, :req, :reqs, :tracker_reqs, :error_reqs
+        attr_accessor :last_ping_time # 记录该ws上次发送ping心跳的epoch，超出15s后自动关闭重连该ws
         attr_accessor :force_close_flag # 设置该标记后，ws关闭时不会重建连接
         # 标记该ws是否处于正在open，当ws成功open后，被设置为false
         attr_accessor :opening
@@ -48,6 +49,7 @@ module HuobiApi
           target_ws.reqs = []
           target_ws.tracker_reqs = {}
           target_ws.error_reqs = 0
+          target_ws.last_ping_time = Time.now
           target_ws.force_close_flag = false
           target_ws.opening = true
         end
@@ -60,13 +62,23 @@ module HuobiApi
         # 等待认证完成
         # 需给定语句块，在等待完成后会被执行
         def wait_authed
-          t = Async(annotation: 'wait authed') do |task|
-            task.sleep 0.05 until authed?
-            next yield self if block_given?
-            self
+          raise "#{self.class}##{__method__.to_s}: missing block" unless block_given?
+          EM.schedule do
+            timer = EM::PeriodicTimer.new(0.05) do
+              if authed?
+                yield self
+                timer.cancel
+              end
+            end
           end
-          return t if block_given?
-          t.wait
+
+          # t = Async(annotation: 'wait authed') do |task|
+          #   task.sleep 0.05 until authed?
+          #   next yield self if block_given?
+          #   self
+          # end
+          # return t if block_given?
+          # t.wait
         end
 
         # CONNECTING: 0
@@ -85,6 +97,28 @@ module HuobiApi
 
         # 等待ws进入open状态
         # 需给定语句块，在等待完成后会被执行
+        def wait_opened1
+          raise "#{self.class}##{__method__.to_s}: missing block" unless block_given?
+          EM.schedule do
+            n = 1
+            timer = EM::PeriodicTimer.new(0.05) do
+              if opened?
+                timer.cancel
+                yield self
+              elsif closed?  # 下面else中关掉了连接
+                timer.cancel
+                Log.debug(self.class) { "un-opened ws closed: #{uuid}, #{req}" }
+              else
+                n += 1
+                if n % 100 == 0
+                  Log.debug(self.class) { "wait ws open: (state: #{ready_state}/#{Faye::WebSocket::OPEN}), #{uuid}, #{req}" }
+                end
+                self.close if n % 400 == 0 # 如果等待20秒后还在等待，关掉连接
+              end
+            end
+          end
+        end
+
         def wait_opened
           t = Async(annotation: 'wait ws opened') do |subtask|
             n = 1
@@ -93,13 +127,13 @@ module HuobiApi
               n += 1
 
               if n % 100 == 0
-                Log.debug(self.class) {"wait ws open: (state: #{ready_state}/#{Faye::WebSocket::OPEN}), #{uuid}, #{req}"}
+                Log.debug(self.class) { "wait ws open: (state: #{ready_state}/#{Faye::WebSocket::OPEN}), #{uuid}, #{req}" }
               end
-              self.close if n % 400 == 0  # 如果等待20秒后还在等待，关掉连接
+              self.close if n % 400 == 0 # 如果等待20秒后还在等待，关掉连接
             end
 
             if closed?
-              Log.debug(self.class) {"un-opened ws closed: #{uuid}, #{req}"}
+              Log.debug(self.class) { "un-opened ws closed: #{uuid}, #{req}" }
               next
             end
             next yield self if block_given?

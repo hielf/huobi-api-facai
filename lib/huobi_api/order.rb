@@ -59,30 +59,35 @@ module HuobiApi
       res = HuobiApi::Network::Rest.send_req('post', path, req_data)
       res
     end
+
     private :order_place
 
     # 限价买、卖单
     # @param order_type: 'buy' or 'sell'
     # @param price: 限价挂单价格
     # @param amount: 指定挂单数量，{usdt_amount: xxx}表示usdt数量, {coin_amount: xxx}表示币数量
+    # 返回：挂单成功时，{data:234748720841723,code:200,success:true}
     def limit_order(order_type, price, **amount)
       if amount.size != 1 or amount.transform_keys!(&:to_sym)
                                    .except(:usdt_amount, :coin_amount)
                                    .any?
-        Log.error("#{self.class}#limit_order") { "argument wrong" }
+        Log.error("#{self.class}#limit_order") { "argument wrong 1" }
         return
       end
 
       case [price, order_type]
       in [Float | Integer, 'sell' | 'buy']
       else
-        Log.error("#{self.class}#limit_order") { "argument wrong" }
+        Log.error("#{self.class}#limit_order") { "argument wrong 2" }
         return
       end
 
       price = price.to_f.truncate(@price_precision)
       order_amount = amount[:usdt_amount] ? (amount[:usdt_amount] / price) : amount[:coin_amount]
       order_amount = order_amount.to_f.truncate(@amount_precision)
+
+      # 如果要交易的数量太少，直接返回
+      return if order_amount == 0
 
       order_place(order_amount, "#{order_type}-limit", price: price)
     end
@@ -145,6 +150,9 @@ module HuobiApi
     # 市价买、卖单
     # @param order_type: 'buy' or 'sell'
     # @param amount: 市价买单时，为usdt数量表示买入多少usdt，市价卖单时，为币的数量
+    # 返回：
+    #   - 挂单成功：{data:234748720841723,code:200,success:true}
+    #   - 挂单失败，则data字段为nil
     def market_order(order_type, amount)
       if order_type != 'buy' and order_type != 'sell'
         Log.error("#{self.class}#market_order") { "argument wrong" }
@@ -181,15 +189,15 @@ module HuobiApi
 
       options = options.transform_keys!(&:to_sym)
       begin
-        if type == 'market' and side == 'buy'  # 市价买单
+        if type == 'market' and side == 'buy' # 市价买单
           req_data[:orderValue] = options.fetch(:amount)
-        elsif type == 'market' and side == 'sell'  # 市价卖单
+        elsif type == 'market' and side == 'sell' # 市价卖单
           req_data[:orderSize] = options.fetch(:amount).to_f.truncate(@amount_precision)
         elsif type == 'limit' and side == 'buy'
           price = options.fetch(:price).to_f.truncate(@price_precision)
           req_data[:orderPrice] = price
 
-          coin_amount = options.fetch(:amount) / price.to_f    # usdt_amount to coin_amount
+          coin_amount = options.fetch(:amount) / price.to_f # usdt_amount to coin_amount
           req_data[:orderSize] = coin_amount.to_f.truncate(@amount_precision)
         elsif type == 'limit' and side == 'sell'
           req_data[:orderPrice] = options.fetch(:price).to_f.truncate(@price_precision)
@@ -285,6 +293,30 @@ module HuobiApi
     end
 
     # 查询该币或指定币的历史订单信息
+    # 返回：成功后响应的数据格式：
+    # {
+    #   "status": "ok",
+    #   "data": [
+    #     {
+    #       "id": 235204744123517,
+    #       "symbol": "waxpusdt",
+    #       "account-id": 19452218,
+    #       "client-order-id": "",
+    #       "amount": "20.380000000000000000",  // 市价买入时表示委托买入的usdt数量，限价买卖或市价卖出时，表示入时委托的币数量
+    #       "price": "0.0",  // 市价买卖时，该字段为0，限价买卖时，该字段大于0
+    #       "created-at": 1616149829417,
+    #       "type": "sell-market",    // buy-limit(限价买), sell-limit(限价卖), sell-market(市价卖), buy-market(市价买)
+    #       "field-amount": "20.380000000000000000", // 表示实际成交的币数量(a)
+    #       "field-cash-amount": "4.983195320000000000", // 表示实际成交的usdt数量(b)，b/a就是市价买卖时的成交均价
+    #       "field-fees": "0.009966390640000000",
+    #       "finished-at": 1616149829431,
+    #       "source": "spot-web",
+    #       "state": "filled",    //filled表示已完成，canceled表示已撤单
+    #       "canceled-at": 0      // 如果是撤单操作，该字段大于0
+    #      },
+    #      ...
+    #   ]
+    # }
     def order_history(symbol = @symbol)
       path = '/v1/order/orders'
       states = 'created,submitted,partial-filled,filled,canceling,canceled,partial-canceled'
@@ -309,9 +341,10 @@ module HuobiApi
     def submit_cancel(order_id)
       path = "/v1/order/orders/#{order_id}/submitcancel"
       res = HuobiApi::Network::Rest.send_req('post', path)
-      res
+      res['status'] == 'ok' ? res['data'] : nil
     end
 
+    # 撤单：基于client_order_id进行撤单
     def cancel_by_client_order_id(client_order_id)
       path = '/v1/order/orders/submitCancelClientOrder'
       req_data = {
@@ -321,7 +354,9 @@ module HuobiApi
       res
     end
 
-    # 撤单该币或指定币的所有订单
+    # 批量撤单：基于指定的order_id来批量撤单
+
+    # 批量撤单：基于指定的币来撤单该币的所有订单
     def submit_cancel_all(symbol = @symbol)
       path = '/v1/order/orders/batchCancelOpenOrders'
       req_data = {

@@ -1,4 +1,6 @@
 require 'zlib'
+require 'async/barrier'
+require 'async/semaphore'
 require_relative './websocket_base'
 require_relative './websocket_wspool'
 
@@ -71,7 +73,10 @@ module HuobiApi
 
             case data
             in { ping: ts }
-              ws.opened? && ws.send(MultiJson.dump({ "pong": ts }))
+              if ws.opened?
+                ws.send(MultiJson.dump({ "pong": ts }))
+                ws.last_ping_time = Time.now  # 设置该ws的ping时间点
+              end
             in { ch: _, tick: _ } # 有tick字段，说明是订阅后推送的实时K线数据
               # handle_realtime_data(data)
               @queue.push(data)
@@ -108,7 +113,7 @@ module HuobiApi
           ws_reconnect = ->(old_ws) {
             Log.debug(self.class) { "ws #{type} reconnect: #{old_ws.url}" }
 
-            # 先移除ws
+            # 先从wspool中移除旧的ws
             pool = ws_pool
             pool.delete_by_uuid(old_ws.uuid)
 
@@ -146,19 +151,6 @@ module HuobiApi
 
       class ReqKLine < BaseKLine
         class << self
-          private def distance(type)
-            case type
-            when '1min', '5min', '15min', '30min', '60min'
-              60 * type.to_i
-            when '1day'
-              86400 # 24 * 60 * 60
-            when '1week'
-              604800 # 7 * 24 * 60 * 60
-            else
-              raise ArgumentError, 'invalid type'
-            end
-          end
-
           # 给定一个epoch，将其对其到K对应K线类型的起始时间点
           # 例如，对于15分钟K线，10:25:10对应的epoch将被对齐为10:15:00的epoch
           private def kline_epoch_align(type, epoch)
@@ -184,6 +176,19 @@ module HuobiApi
             when '1week'
               # Huobi的周K线起点是星期日，星期日的wday=0
               Time.at(epoch).wday == 0 and Time.at(epoch).to_date.to_time.to_i == epoch
+            else
+              raise ArgumentError, 'invalid type'
+            end
+          end
+
+          def distance(type)
+            case type
+            when '1min', '5min', '15min', '30min', '60min'
+              60 * type.to_i
+            when '1day'
+              86400 # 24 * 60 * 60
+            when '1week'
+              604800 # 7 * 24 * 60 * 60
             else
               raise ArgumentError, 'invalid type'
             end
@@ -247,7 +252,7 @@ module HuobiApi
           end
         end
 
-        def initialize(pool_size = 32, url = nil)
+        def initialize(pool_size = 40, url = nil)
           super()
 
           url = url || (WS_URLS[1] + '/ws')
@@ -263,16 +268,24 @@ module HuobiApi
         def req_coins_kline(coins, type, klines_cnt = 900, from: nil, to: nil)
           coins = Array[*coins]
 
-          coins.each do |symbol|
-            ## async version
-            # ws_pool.shift! do |ws|
-            #   req_kline(ws, symbol, type, from: from, to: to)
-            # end
-
-            ## block version
-            ws = ws_pool.shift!
-            req_kline(ws, symbol, type, klines_cnt, from: from, to: to)
+          ## async version
+          Async do
+            barrier = Async::Barrier.new
+            semaphore = Async::Semaphore.new(ws_pool_size, parent: barrier)
+            coins.each do |symbol|
+              semaphore.async do |task|
+                ws = ws_pool.shift!
+                req_kline(ws, symbol, type, klines_cnt, from: from, to: to)
+              end
+            end
+            barrier.wait
           end
+
+          ## block version
+          # coins.each do |symbol|
+          #   ws = ws_pool.shift!
+          #   req_kline(ws, symbol, type, klines_cnt, from: from, to: to)
+          # end
         end
 
         def req_klines_by_reqs(reqs)
@@ -304,6 +317,7 @@ module HuobiApi
           # ws连接池，池中的ws连接均已经处于open状态
           # 用于订阅实时K线数据，每个ws连接订阅一部分币的实时K线，无需从池中pop
           create_ws_pool(20, WS_URLS[2] + '/ws', 'sub').wait_pool_init
+          self.ws_pool.rebuild_ws_pool
         end
 
         def gen_req(symbol)
@@ -343,4 +357,158 @@ module HuobiApi
   end
 end
 
+module HuobiApi
+  module Coins
+    class << self
+      attr_reader :coins_open_time
+    end
+    @coins_open_at_file = File.join(File.absolute_path(__dir__), "kline_start_time.txt")
+    @coins_open_time = {}
+
+    def self.open_epoch(symbol, type = nil)
+      coin_open_at(symbol) unless @coins_open_time[symbol]
+
+      ts = @coins_open_time[symbol]
+      type.nil? ? ts : ts[type.to_s]
+    end
+
+    # 获取币的K线起始时间点(多数情况下也即该币上线交易的时间点)
+    # 获取到的时间将以'btcusdt: 1212121212'格式写入文件kline_start_time.txt
+    def self.coin_open_at(symbol)
+      # 先从文件中查询
+      path = @coins_open_at_file
+      if File.exist?(path)
+        File.readlines(path, chomp: true).each do |line|
+          info = MultiJson.load(line)
+          @coins_open_time[info["symbol"]] = info
+        end
+        return @coins_open_time[symbol] if @coins_open_time[symbol]
+      end
+
+      tmp_data = []
+      cnt = 900 # 每次获取900根K线
+
+      # 新建一个临时ws
+      cbs = {
+        on_open: ->(event) {
+          ws = event.current_target
+          Log.debug(self.class) { "ws connected：#{ws.url}" }
+        },
+        on_close: ->(_event) { Log.debug(self.class) { "ws closed" } },
+        on_error: ->(_event) {},
+        on_message: ->(event) {
+          ws = event.current_target
+          blob_arr = event.data
+          data = MultiJson.load(Zlib::gunzip(blob_arr.pack('c*')), symbolize_keys: true)
+
+          case data
+          in { ping: ts }
+            ws.opened? && ws.send(MultiJson.dump({ "pong": ts }))
+          in { id:, rep:, status: 'ok', data: Array }
+            tmp_data << data
+          else
+            Log.debug(self.class) { "other msgs: #{data}" }
+          end
+        }
+      }
+      url = HuobiApi::Network::WS_URLS[0] + '/ws'
+      ws = HuobiApi::Network::WebSocket.new_ws(url, **cbs).wait_opened
+      # ws = WebSocket.new_ws(url, **cbs)
+
+      get_res = ->(req) {
+        # t = nil
+        # ws.wait_opened do |ws|
+        #   ws.send(req)
+        #
+        #   t = Async do |subtask|
+        #     subtask.sleep 0.05 until tmp_data.any?
+        #     tmp_data.shift[:data]
+        #   end
+        # end
+        #
+        # t.wait
+
+        ws.send(req)
+
+        Async do |subtask|
+          subtask.sleep 0.05 until tmp_data.any?
+          tmp_data.shift[:data]
+        end.wait
+      }
+
+      # 找到从哪一周开始
+      find_week = ->(to = Time.now.to_i) {
+        req = HuobiApi::Network::WebSocket::ReqKLine.gen_req(symbol, '1week', to: to)
+        data = get_res.call(req)
+        if data.size < cnt
+          data[0][:id]
+        elsif data.size == cnt
+          to = data[0][:id] - 1
+          find_week.call(to = to)
+        end
+      }
+
+      # 找到起始周后，从起始周开始找到起始时间点
+      find_epoch = ->(from, type) {
+        req = HuobiApi::Network::WebSocket::ReqKLine.gen_req(symbol, type, from: from)
+        data = get_res.call(req)
+        if data.empty?
+          from += cnt * HuobiApi::Network::WebSocket::ReqKLine.distance(type)
+          find_epoch.call(from, type)
+        elsif data.size < cnt
+          data[0][:id]
+        elsif data.size == cnt
+          from = from - cnt * HuobiApi::Network::WebSocket::ReqKLine.distance(type) + 1
+          find_epoch.call(from, type)
+        end
+      }
+
+      epoch_week = find_week.call
+      epoch_day = find_epoch.call(epoch_week, '1day')
+      epoch_60min = find_epoch.call(epoch_day, '60min')
+      epoch_30min = find_epoch.call(epoch_60min, '30min')
+      epoch_15min = find_epoch.call(epoch_30min, '15min')
+      epoch_5min = find_epoch.call(epoch_15min, '5min')
+
+      ts = {
+        "symbol" => symbol,
+        "1week" => epoch_week,
+        "1day" => epoch_day,
+        "60min" => epoch_60min,
+        "30min" => epoch_30min,
+        "15min" => epoch_15min,
+        "5min" => epoch_5min,
+        "1min" => epoch_5min,
+      }
+      ws.close
+
+      @coins_open_time[symbol] = ts
+      File.open(path, 'a') do |f|
+        f.puts JSON.dump(ts)
+      end
+
+      ts
+    end
+
+    # 查找一个或多个币的K线起始时间点
+    # @param symbols 数组
+    # @return {btcusdt: 12121212, ethusdt: 213232323,...}
+    def self.coins_open_at(symbols)
+      times = []
+
+      # 最大并发64个查询
+      symbols.each_slice(64).each do |some_coins|
+        Async do |task|
+          some_coins.each do |symbol|
+            Async do |subtask|
+              times << coin_open_at(symbol)
+            end
+          end
+        end
+      end
+
+      times
+    end
+  end
+end
 

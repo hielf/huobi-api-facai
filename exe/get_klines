@@ -53,8 +53,22 @@ module HuobiApi
           }
           url = WS_URLS[0] + '/ws'
           ws = WebSocket.new_ws(url, **cbs).wait_opened
+          # ws = WebSocket.new_ws(url, **cbs)
 
           get_res = ->(req) {
+            # t = nil
+            # ws.wait_opened do |ws|
+            #   ws.send(req)
+            #
+            #   t = Async do |subtask|
+            #     subtask.sleep 0.05 until tmp_data.any?
+            #     tmp_data.shift[:data]
+            #   end
+            # end
+            #
+            # t.wait
+
+
             ws.send(req)
 
             Async do |subtask|
@@ -347,7 +361,7 @@ class KlinesDB
       end
     }
 
-    symbols.product(types).each_slice(10).each do |some_pairs|
+    symbols.product(types).each_slice(20).each do |some_pairs|
       Async do |task|
         some_pairs.each do |symbol, type|
           # p [symbol, type, Time.now.strftime("%F %T.%3N")]

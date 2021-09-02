@@ -12,4 +12,4 @@ lib/only_test.rb
 .gitignore
 Gemfile.lock
 bin/console_test.rb
-bin/get_klines.rb
+bin/config.yml
