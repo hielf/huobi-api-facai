@@ -34,7 +34,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency "faye-websocket", "~> 0.11.0"
   spec.add_dependency "async"
   spec.add_dependency "async-io"
-  spec.add_dependency "httplog"
   spec.add_dependency "oj"
   spec.add_dependency "multi_json"
 

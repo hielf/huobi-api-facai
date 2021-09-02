@@ -3,16 +3,10 @@ require 'multi_json'
 require 'uri'
 require 'net/http'
 require 'logger'
-require 'httplog'
 
 require_relative './../base'
 require_relative './utils'
 require_relative './network_url'
-
-HttpLog.configure do |config|
-  # config.enabled = false
-  config.url_blacklist_pattern = '/v1/common/symbols'
-end
 
 module HuobiApi
   module Network
