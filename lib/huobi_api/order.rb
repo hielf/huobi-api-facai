@@ -7,6 +7,30 @@ module HuobiApi
   class Order
     attr_reader :symbol, :price_precision, :amount_precision
 
+    # 查询交易费率
+    # 成功则返回:
+    # {
+    #   "code"=>200, "data"=>[
+    #     {
+    #       "symbol"=>"btcusdt",
+    #       "actualMakerRate"=>"0.002",
+    #       "actualTakerRate"=>"0.002",
+    #       "takerFeeRate"=>"0.002",
+    #       "makerFeeRate"=>"0.002"
+    #     }
+    #   ],
+    #   "success"=>true
+    # }
+    def self.fee_rate
+      return @fee_rate if @fee_rate
+
+      path = '/v2/reference/transact-fee-rate'
+      req_data = {symbols: 'btcusdt'}
+      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
+      @fee_rate = res['success'] ? res['data'][0]['makerFeeRate'].to_f : nil
+      @fee_rate
+    end
+
     def initialize(symbol)
       symbol = symbol.end_with?('usdt') ? symbol : "#{symbol}usdt"
       unless HuobiApi::Coins.valid_symbol?(symbol)
