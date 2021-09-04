@@ -12,7 +12,6 @@ module HuobiApi
         else
           super(name, *args, &block)
         end
-
       end
     end
 
