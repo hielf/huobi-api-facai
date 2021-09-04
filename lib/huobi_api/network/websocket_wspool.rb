@@ -60,7 +60,7 @@ module HuobiApi
           Thread.new do
             while true
               if Time.now.to_i - @pool_conn_time >= 1800
-                puts "rebuild ws pool at #{Time.now}"
+                Log.debug(self.class) { "+++++++++ rebuild ws pool at #{Time.now} +++++++++++" }
                 pool.each(&:close)
                 @pool_conn_time = Time.now.to_i
               end
