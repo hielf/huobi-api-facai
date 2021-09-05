@@ -393,7 +393,7 @@ module HuobiApi
       cbs = {
         on_open: ->(event) {
           ws = event.current_target
-          Log.debug(self.class) { "ws for querying coin open time connected：#{ws.url}" }
+          Log.debug(self.class) { "ws for querying coin <#{symbol}> open time connected：#{ws.url}" }
         },
         on_close: ->(_event) { Log.debug(self.class) { "ws for querying coin open time closed" } },
         on_error: ->(_event) {},
