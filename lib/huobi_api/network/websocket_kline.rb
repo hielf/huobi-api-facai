@@ -365,6 +365,7 @@ module HuobiApi
     @coins_open_at_file = File.join(File.absolute_path(__dir__), "kline_start_time.txt")
     @coins_open_time = {}
 
+    # @return 开盘时间hash{}或某种类型的开盘时间
     def self.open_epoch(symbol, type = nil)
       coin_open_at(symbol) unless @coins_open_time[symbol]
 
