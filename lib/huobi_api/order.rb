@@ -25,11 +25,156 @@ module HuobiApi
       return @fee_rate if @fee_rate
 
       path = '/v2/reference/transact-fee-rate'
-      req_data = {symbols: 'btcusdt'}
+      req_data = { symbols: 'btcusdt' }
       res = HuobiApi::Network::Rest.send_req('get', path, req_data)
       @fee_rate = res['success'] ? res['data'][0]['makerFeeRate'].to_f : nil
       @fee_rate
     end
+
+    # 查询未触发的策略委托单：只能查询未触发时的委托单，已触发的委托单需使用open_orders来查询
+    def self.algo_order_opening(symbol)
+      path = '/v2/algo-orders/opening'
+      req_data = {
+        symbol: symbol
+      }
+      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
+      res
+    end
+
+    # 查询该币或指定币的策略委托历史
+    # order_status:
+    #   - canceled表示已撤销的策略委托
+    #   - rejected表示委托失败
+    #   - triggered表示已触发
+    def self.algo_order_history(symbol, order_status)
+      path = '/v2/algo-orders/history'
+      req_data = {
+        symbol: symbol,
+        orderStatus: order_status, #'canceled,rejected,triggered',
+      }
+      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
+      res
+    end
+
+    # openOrder: 查询该币或指定币的已提交但仍未完全成交或未被撤销的订单
+    def self.open_orders(symbol)
+      path = '/v1/order/openOrders'
+      req_data = { symbol: symbol, 'account-id': HuobiApi::Account.account_id }
+      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
+      res['status'] == 'ok' ? res['data'] : nil
+    end
+
+    # 查询该币或指定币的历史订单信息
+    # 返回：成功后响应的数据格式：
+    # {
+    #   "status": "ok",
+    #   "data": [
+    #     {
+    #       "id": 235204744123517,
+    #       "symbol": "waxpusdt",
+    #       "account-id": 19452218,
+    #       "client-order-id": "",
+    #       "amount": "20.380000000000000000",  // 市价买入时表示委托买入的usdt数量，限价买卖或市价卖出时，表示入时委托的币数量
+    #       "price": "0.0",  // 市价买卖时，该字段为0，限价买卖时，该字段大于0
+    #       "created-at": 1616149829417,
+    #       "type": "sell-market",    // buy-limit(限价买), sell-limit(限价卖), sell-market(市价卖), buy-market(市价买)
+    #       "field-amount": "20.380000000000000000", // 表示实际成交的币数量(a)
+    #       "field-cash-amount": "4.983195320000000000", // 表示实际成交的usdt数量(b)，b/a就是市价买卖时的成交均价
+    #       "field-fees": "0.009966390640000000",
+    #       "finished-at": 1616149829431,
+    #       "source": "spot-web",
+    #       "state": "filled",    //filled表示已完成，canceled表示已撤单
+    #       "canceled-at": 0      // 如果是撤单操作，该字段大于0
+    #      },
+    #      ...
+    #   ]
+    # }
+    def self.order_history(symbol)
+      path = '/v1/order/orders'
+      states = 'created,submitted,partial-filled,filled,canceling,canceled,partial-canceled'
+      req_data = {
+        states: states,
+        symbol: symbol,
+        'account-id': HuobiApi::Account.account_id
+      }
+      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
+      res['status'] == 'ok' ? res['data'] : nil
+    end
+
+    # 获取订单详情
+    def self.order_details(order_id)
+      path = "/v1/order/orders/#{order_id}"
+      res = HuobiApi::Network::Rest.send_req('get', path)
+      res['status'] == 'ok' ? res['data'] : nil
+    end
+
+    # 撤单
+    # 撤单成功：{"status"=>"ok", "data"=>"<order_id>"}
+    def self.submit_cancel(order_id)
+      path = "/v1/order/orders/#{order_id}/submitcancel"
+      res = HuobiApi::Network::Rest.send_req('post', path)
+      res['status'] == 'ok' ? res['data'] : nil
+    end
+
+    # 撤单：基于client_order_id进行撤单
+    def self.cancel_by_client_order_id(client_order_id)
+      path = '/v1/order/orders/submitCancelClientOrder'
+      req_data = { 'client-order-id': client_order_id }
+      res = HuobiApi::Network::Rest.send_req('post', path, req_data)
+      res
+    end
+
+    # 批量撤单：基于指定的order_id来批量撤单
+
+    # 批量撤单：基于指定的币来撤单该币的所有订单
+    def self.submit_cancel_all(symbol)
+      path = '/v1/order/orders/batchCancelOpenOrders'
+      req_data = {
+        'account-id': HuobiApi::Account.account_id,
+        symbol: symbol, # 如果symbol字段为'all'，将撤销所有币的挂单
+      }
+      res = HuobiApi::Network::Rest.send_req('post', path, req_data)
+      res
+    end
+
+    # 查询策略委托的委托详情
+    # 成功时返回
+    # {"code"=>200,
+    #  "data"=>
+    #   {"orderOrigTime"=>1623193741069,
+    #    "lastActTime"=>1623193741353,
+    #    "symbol"=>"dogeusdt",
+    #    "source"=>"api",
+    #    "clientOrderId"=>"algo_api_84413ec3-843e-4f74-96c8-eda64c750cda",
+    #    "orderSide"=>"sell",
+    #    "orderType"=>"market",
+    #    "orderSize"=>"18.1",
+    #    "accountId"=>19452218,
+    #    "timeInForce"=>"ioc",
+    #    "stopPrice"=>"0.335228",
+    #    "orderStatus"=>"created"}}
+    def self.algo_order_details(client_order_id)
+      path = '/v2/algo-orders/specific'
+      req_data = {
+        clientOrderId: client_order_id,
+      }
+      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
+      res
+    end
+
+    # 策略委托的撤单：只能撤销未触发时的委托单，已触发的委托单需使用submit_cancel来撤单
+    def self.algo_order_cancel(*client_order_ids)
+      path = '/v2/algo-orders/cancellation'
+      req_data = {
+        clientOrderIds: client_order_ids
+      }
+      res = HuobiApi::Network::Rest.send_req('post', path, req_data)
+      res
+    end
+
+
+
+
 
     def initialize(symbol)
       symbol = symbol.end_with?('usdt') ? symbol : "#{symbol}usdt"
@@ -249,24 +394,10 @@ module HuobiApi
     end
 
     # 策略委托的撤单：只能撤销未触发时的委托单，已触发的委托单需使用submit_cancel来撤单
-    def algo_order_cancel(*client_order_ids)
-      path = '/v2/algo-orders/cancellation'
-      req_data = {
-        clientOrderIds: client_order_ids
-      }
-      res = HuobiApi::Network::Rest.send_req('post', path, req_data)
-      res
-    end
+    def algo_order_cancel(*client_order_ids) = self.class.algo_order_cancel(*client_order_ids)
 
     # 查询未触发的策略委托单：只能查询未触发时的委托单，已触发的委托单需使用open_orders来查询
-    def algo_order_opening(symbol = @symbol)
-      path = '/v2/algo-orders/opening'
-      req_data = {
-        symbol: symbol
-      }
-      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
-      res
-    end
+    def algo_order_opening = self.class.algo_order_opening(@symbol)
 
     # 查询策略委托的委托详情
     # 成功时返回
@@ -284,37 +415,17 @@ module HuobiApi
     #    "timeInForce"=>"ioc",
     #    "stopPrice"=>"0.335228",
     #    "orderStatus"=>"created"}}
-    def algo_order_details(client_order_id)
-      path = '/v2/algo-orders/specific'
-      req_data = {
-        clientOrderId: client_order_id,
-      }
-      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
-      res
-    end
+    def algo_order_details(client_order_id) = self.class.algo_order_details(client_order_id)
 
     # 查询该币或指定币的策略委托历史
     # order_status:
     #   - canceled表示已撤销的策略委托
     #   - rejected表示委托失败
     #   - triggered表示已触发
-    def algo_order_history(symbol = @symbol, order_status)
-      path = '/v2/algo-orders/history'
-      req_data = {
-        symbol: symbol,
-        orderStatus: order_status, #'canceled,rejected,triggered',
-      }
-      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
-      res
-    end
+    def algo_order_history(order_status) = self.class.algo_order_history(@symbol, order_status)
 
     # openOrder: 查询该币或指定币的已提交但仍未完全成交或未被撤销的订单
-    def open_orders(symbol = @symbol)
-      path = '/v1/order/openOrders'
-      req_data = { symbol: symbol, 'account-id': HuobiApi::Account.account_id }
-      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
-      res['status'] == 'ok' ? res['data'] : nil
-    end
+    def open_orders = self.class.open_orders(@symbol)
 
     # 查询该币或指定币的历史订单信息
     # 返回：成功后响应的数据格式：
@@ -341,55 +452,22 @@ module HuobiApi
     #      ...
     #   ]
     # }
-    def order_history(symbol = @symbol)
-      path = '/v1/order/orders'
-      states = 'created,submitted,partial-filled,filled,canceling,canceled,partial-canceled'
-      req_data = {
-        states: states,
-        symbol: symbol,
-        'account-id': HuobiApi::Account.account_id
-      }
-      res = HuobiApi::Network::Rest.send_req('get', path, req_data)
-      res['status'] == 'ok' ? res['data'] : nil
-    end
+    def order_history = self.class.order_history(@symbol)
 
     # 获取订单详情
-    def order_details(order_id)
-      path = "/v1/order/orders/#{order_id}"
-      res = HuobiApi::Network::Rest.send_req('get', path)
-      res['status'] == 'ok' ? res['data'] : nil
-    end
+    def order_details(order_id) = self.class.order_details(order_id)
 
     # 撤单
     # 撤单成功：{"status"=>"ok", "data"=>"<order_id>"}
-    def submit_cancel(order_id)
-      path = "/v1/order/orders/#{order_id}/submitcancel"
-      res = HuobiApi::Network::Rest.send_req('post', path)
-      res['status'] == 'ok' ? res['data'] : nil
-    end
+    def submit_cancel(order_id) = self.class.submit_cancel(order_id)
 
     # 撤单：基于client_order_id进行撤单
-    def cancel_by_client_order_id(client_order_id)
-      path = '/v1/order/orders/submitCancelClientOrder'
-      req_data = {
-        'client-order-id': client_order_id
-      }
-      res = HuobiApi::Network::Rest.send_req('post', path, req_data)
-      res
-    end
+    def cancel_by_client_order_id(client_order_id) = self.class.cancel_by_client_order_id(client_order_id)
 
     # 批量撤单：基于指定的order_id来批量撤单
 
     # 批量撤单：基于指定的币来撤单该币的所有订单
-    def submit_cancel_all(symbol = @symbol)
-      path = '/v1/order/orders/batchCancelOpenOrders'
-      req_data = {
-        'account-id': HuobiApi::Account.account_id,
-        symbol: symbol, # 如果symbol字段为'all'，将撤销所有币的挂单
-      }
-      res = HuobiApi::Network::Rest.send_req('post', path, req_data)
-      res
-    end
+    def submit_cancel_all = self.class.submit_cancel_all(@symbol)
   end
 end
 
