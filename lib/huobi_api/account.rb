@@ -13,22 +13,27 @@ module HuobiApi
       @account_id
     end
 
-    # @return [Hash{String->String}]
+    # @return [Hash{String->String}, nil]
     def self.balance
       res = HuobiApi::Network::Rest.send_req('get', "/v1/account/accounts/#{account_id}/balance")
-      res
+      res["status"] == "ok" ? res.dig('data', 'list') : nil
     end
 
     # @param [String] coin
-    # @return [Hash{String->Float}] or {}
+    # @return [Hash{String->Float},{}]
     def self.coin_balance(coin)
-      balance_list = balance.dig('data','list')
-      coin = coin.downcase
-      balances = balance_list.filter { |info| info['currency'] == coin }
+      coin = coin.downcase.delete_suffix('usdt') if /usdt$/i.match?(coin)
 
-      balances.each_with_object({}) do |info, h|
-        h[info['type']] = info['balance'].to_f
+      balance_list = balance
+      if balance_list.nil?
+        {}
+      else
+        balances = balance_list.select { |info| info['currency'] == coin.downcase }
+        balances.each_with_object({}) do |info, h|
+          h[info['type']] = info['balance'].to_f
+        end
       end
+
     end
   end
 end

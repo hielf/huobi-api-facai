@@ -9,4 +9,9 @@ Rake::TestTask.new(:test) do |t|
   t.test_files = FileList["test/**/*_test.rb"]
 end
 
+task(:commit) do 
+  sh %q(ruby -i -pe 'gsub(/^(\s+VERSION.*\.)(\d+)"$/){$1 + $2.succ + %Q(")}' lib/huobi_api/version.rb)
+  sh %Q(git add .;git commit -m #{Time.now.strftime("%FT%T")};git push origin stable_v1)
+end 
+
 task default: :test
