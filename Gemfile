@@ -13,6 +13,6 @@ gem 'httplog'
 gem 'pry'
 gem 'async'
 gem 'async-io'
-gem 'oj'
+gem 'oj', "~> 3.13.7"
 gem 'multi_json'
 

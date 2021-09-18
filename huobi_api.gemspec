@@ -35,7 +35,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "async"
   spec.add_dependency "async-io"
   spec.add_dependency "httplog"
-  spec.add_dependency "oj"
+  spec.add_dependency "oj", "~> 3.13.0"
   spec.add_dependency "multi_json"
 
   # For more information and examples about making a new gem, checkout our
