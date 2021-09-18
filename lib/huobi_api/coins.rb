@@ -6,7 +6,7 @@ module HuobiApi
     @all_symbols = nil
 
     class << self
-      attr_reader :all_coins_info, :all_symbols
+      attr_reader :all_coins_info, :all_symbols, :pre_online_symbols
     end
 
     # get all coin info
@@ -37,8 +37,8 @@ module HuobiApi
       stable_coins = %w[usdc pax dai]
       all_coins_info = res['data'].each_with_object({}) do |info, hash|
         if info['quote-currency'] == 'usdt' && info['state'] != 'offline' &&
-          ! /^.*\d[sl]$/.match?(info['base-currency']) &&  # 跳过杠杆币，如fil3s fil3l
-          ! stable_coins.include?(info['base-currency'])   # 跳过稳定币(usdc/pax/dai)
+          !/^.*\d[sl]$/.match?(info['base-currency']) && # 跳过杠杆币，如fil3s fil3l
+          !stable_coins.include?(info['base-currency']) # 跳过稳定币(usdc/pax/dai)
           hash[info['symbol']] = info
         end
       end
@@ -86,11 +86,11 @@ module HuobiApi
     #    ...
     #  ]
     #  }
-    def self.all_coins_info_v2  # 通过API方式，还无法获取potential区的币的信息(缺失)
+    def self.all_coins_info_v2 # 通过API方式，还无法获取potential区的币的信息(缺失)
       res = HuobiApi::Network::Rest.send_req('get', '/v2/beta/common/symbols')
       stable_coins = %w[usdc pax dai]
       all_coins_info = res['data'].each_with_object({}) do |info, hash|
-        if /^[^*]+USDT$/.match?(info['display_name']) && info['state'] != 'offline' && ! stable_coins.include?(info['base_currency'])
+        if /^[^*]+USDT$/.match?(info['display_name']) && info['state'] != 'offline' && !stable_coins.include?(info['base_currency'])
           hash[info['symbol_code']] = info
         end
       end
@@ -103,7 +103,8 @@ module HuobiApi
 
       all_coins_info = all_coins_info_v1
       @all_coins_info = all_coins_info
-      @all_symbols = all_coins_info.keys
+      @all_symbols = all_coins_info.select { |_x, y| y["state"] == "online" }.keys
+      @pre_online_symbols = all_coins_info.select { |_x, y| y["state"] == "pre-online" }.keys
       all_coins_info
     end
 
@@ -116,12 +117,12 @@ module HuobiApi
 
     def self.coin_price_precision(symbol)
       all_coins_info.dig(symbol, 'price-precision') ||
-      all_coins_info.dig(symbol, 'trade_price_precision')
+        all_coins_info.dig(symbol, 'trade_price_precision')
     end
 
     def self.coin_amount_precision(symbol)
       all_coins_info.dig(symbol, 'amount-precision') ||
-      all_coins_info.dig(symbol, 'trade_amount_precision')
+        all_coins_info.dig(symbol, 'trade_amount_precision')
     end
 
     def self.valid_symbol?(symbol)
