@@ -103,7 +103,8 @@ module HuobiApi
 
       all_coins_info = all_coins_info_v1
       @all_coins_info = all_coins_info
-      @all_symbols = all_coins_info.keys
+      @all_symbols = all_coins_info.select { |_x, y| y["state"] == "online" }.keys
+      @pre_online_symbols = all_coins_info.select { |_x, y| y["state"] == "pre-online" }.keys
       all_coins_info
     end
 
