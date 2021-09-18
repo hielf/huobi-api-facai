@@ -75,7 +75,7 @@ module HuobiApi
             in { ping: ts }
               if ws.opened?
                 ws.send(MultiJson.dump({ "pong": ts }))
-                ws.last_ping_time = Time.now  # 设置该ws的ping时间点
+                ws.last_ping_time = Time.now # 设置该ws的ping时间点
               end
             in { ch: _, tick: _ } # 有tick字段，说明是订阅后推送的实时K线数据
               # handle_realtime_data(data)
@@ -362,6 +362,7 @@ module HuobiApi
     class << self
       attr_reader :coins_open_time
     end
+
     @coins_open_at_file = File.join(File.absolute_path(__dir__), "kline_start_time.txt")
     @coins_open_time = {}
 
@@ -376,9 +377,11 @@ module HuobiApi
     # 获取币的K线起始时间点(多数情况下也即该币上线交易的时间点)
     # 获取到的时间将以'btcusdt: 1212121212'格式写入文件kline_start_time.txt
     def self.coin_open_at(symbol)
+      return @coins_open_time[symbol] if @coins_open_time[symbol]
+
       # 先从文件中查询
       path = @coins_open_at_file
-      if File.exist?(path)
+      if @coins_open_time.empty? and File.exist?(path)
         File.readlines(path, chomp: true).each do |line|
           info = MultiJson.load(line)
           @coins_open_time[info["symbol"]] = info
@@ -414,21 +417,8 @@ module HuobiApi
       }
       url = HuobiApi::Network::WS_URLS[0] + '/ws'
       ws = HuobiApi::Network::WebSocket.new_ws(url, **cbs).wait_opened
-      # ws = WebSocket.new_ws(url, **cbs)
 
       get_res = ->(req) {
-        # t = nil
-        # ws.wait_opened do |ws|
-        #   ws.send(req)
-        #
-        #   t = Async do |subtask|
-        #     subtask.sleep 0.05 until tmp_data.any?
-        #     tmp_data.shift[:data]
-        #   end
-        # end
-        #
-        # t.wait
-
         ws.send(req)
 
         Async do |subtask|
@@ -495,20 +485,26 @@ module HuobiApi
     # @param symbols 数组
     # @return {btcusdt: 12121212, ethusdt: 213232323,...}
     def self.coins_open_at(symbols)
-      times = []
+      path = @coins_open_at_file
+      if File.exist?(path)
+        File.readlines(path, chomp: true).each do |line|
+          info = MultiJson.load(line)
+          @coins_open_time[info["symbol"]] = info
+        end
+      end
+
+      symbols -= @coins_open_time.keys
 
       # 最大并发64个查询
       symbols.each_slice(64).each do |some_coins|
         Async do |task|
           some_coins.each do |symbol|
             Async do |subtask|
-              times << coin_open_at(symbol)
+              coin_open_at(symbol)
             end
           end
         end
       end
-
-      times
     end
   end
 end
