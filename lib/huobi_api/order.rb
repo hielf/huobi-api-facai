@@ -192,7 +192,7 @@ module HuobiApi
     # @param order_type: limit(限价单)，market(市价单)，stop-limit(止盈止损单)，ioc，limit-fok，stop-limit-fok
     # @param options: {price: xxx}或{price: xxx, "stop-price":xxx, operator: 'gte' | 'lte'}或空{}
     def order_place(amount, order_type, **options)
-      unless Integer === amount or Float === amount
+      unless Numeric === amount
         Log.error("#{self.class}#order_place") { "argument wrong 1" }
         return
       end
@@ -245,7 +245,7 @@ module HuobiApi
       end
 
       case [price, order_type]
-      in [Float | Integer, 'sell' | 'buy']
+      in [Numeric, 'sell' | 'buy']
       else
         Log.error("#{self.class}#limit_order") { "argument wrong 2" }
         return
@@ -291,7 +291,7 @@ module HuobiApi
 
       # price、stop_price、operator参数判断
       case [price, stop_price, operator]
-      in [Integer | Float, Integer | Float, 'gte' | 'lte']
+      in [Numeric, Numeric, 'gte' | 'lte']
       else
         Log.error("#{self.class}#stop_limit_order") { "argument wrong" }
         return
