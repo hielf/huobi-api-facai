@@ -34,7 +34,7 @@ module HuobiApi
     #  }
     def self.all_coins_info_v1
       res = HuobiApi::Network::Rest.send_req('get', '/v1/common/symbols')
-      stable_coins = %w[usdc pax dai]
+      stable_coins = %w[usdc pax dai tusd]
       all_coins_info = res['data'].each_with_object({}) do |info, hash|
         if info['quote-currency'] == 'usdt' && info['state'] != 'offline' &&
           !/^.*\d[sl]$/.match?(info['base-currency']) && # 跳过杠杆币，如fil3s fil3l
@@ -88,7 +88,7 @@ module HuobiApi
     #  }
     def self.all_coins_info_v2 # 通过API方式，还无法获取potential区的币的信息(缺失)
       res = HuobiApi::Network::Rest.send_req('get', '/v2/beta/common/symbols')
-      stable_coins = %w[usdc pax dai]
+      stable_coins = %w[usdc pax dai tusd]
       all_coins_info = res['data'].each_with_object({}) do |info, hash|
         if /^[^*]+USDT$/.match?(info['display_name']) && info['state'] != 'offline' && !stable_coins.include?(info['base_currency'])
           hash[info['symbol_code']] = info
